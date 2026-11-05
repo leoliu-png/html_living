@@ -1,0 +1,118 @@
+.paper-plane-motion {
+  width: min(100%, 360px);
+  justify-self: center;
+  overflow: visible;
+}
+
+.paper-plane-motion svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.plane-wrap {
+  transform-origin: 194px 117px;
+  animation: plane-float 2.8s ease-in-out infinite;
+}
+
+.plane-shadow {
+  fill: rgba(27, 152, 189, 0.12);
+  transform: translate(10px, 12px);
+}
+
+.plane-body {
+  fill: url("#plane-wing");
+  stroke: #1b98bd;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.plane-wing-main {
+  fill: #ffffff;
+  stroke: #1b98bd;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.plane-wing-fold {
+  fill: url("#plane-fold");
+  stroke: #1b98bd;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.plane-fold-line {
+  fill: none;
+  stroke: rgba(27, 152, 189, 0.64);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.plane-trail {
+  fill: none;
+  stroke: #1b98bd;
+  stroke-linecap: round;
+  stroke-dasharray: 42 18;
+  animation: trail-flow 1.3s linear infinite;
+}
+
+.trail-one {
+  stroke-width: 3;
+  opacity: 0.42;
+}
+
+.trail-two {
+  stroke-width: 2;
+  opacity: 0.28;
+  animation-delay: -0.28s;
+}
+
+.trail-three {
+  stroke-width: 2;
+  opacity: 0.2;
+  animation-delay: -0.56s;
+}
+
+.spark {
+  fill: #1b98bd;
+  animation: spark-pop 1.8s ease-in-out infinite;
+}
+
+.spark-two {
+  animation-delay: -0.45s;
+}
+
+.spark-three {
+  animation-delay: -0.9s;
+}
+
+@keyframes plane-float {
+  0%,
+  100% {
+    transform: translate(-4px, 7px) rotate(-4deg);
+  }
+
+  50% {
+    transform: translate(10px, -8px) rotate(2deg);
+  }
+}
+
+@keyframes trail-flow {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+
+@keyframes spark-pop {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: scale(0.72);
+  }
+
+  50% {
+    opacity: 0.78;
+    transform: scale(1.16);
+  }
+}

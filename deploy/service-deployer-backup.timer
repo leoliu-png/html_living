@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily backup of service_deployer DB at 03:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=service-deployer-backup.service
+
+[Install]
+WantedBy=timers.target

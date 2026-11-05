@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily backup of service_deployer PostgreSQL database
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/service-deployer-backup.sh
+StandardOutput=journal
+StandardError=journal

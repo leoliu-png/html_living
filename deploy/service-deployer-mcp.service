@@ -1,0 +1,30 @@
+[Unit]
+Description=Service Deployer MCP Server (Node.js)
+After=network.target service-deployer.service
+Requires=service-deployer.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/service-deployer/mcp-node
+# 非敏感配置
+Environment=PUBLISHER_URL=http://127.0.0.1:30001
+Environment=BASE_URL=https://www.html.living
+Environment=PORT=30002
+Environment=HOST=127.0.0.1
+Environment=ALLOWED_DOMAIN=feedmob.com
+Environment=R2_PUBLIC_URL=https://pub-2ed43ebd6e0c47978b6fd3cb46b4c1c9.r2.dev
+# 敏感凭据从单独文件加载（chmod 600）
+# 文件内容示例：
+#   PUBLISHER_TOKEN=<shared-token-with-backend>
+#   GOOGLE_CLIENT_ID=<google-oauth-client-id>
+#   GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+#   JWT_SECRET=<random-32+ chars>
+EnvironmentFile=/etc/service-deployer/mcp.env
+ExecStart=/usr/bin/node /srv/service-deployer/mcp-node/dist/index.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

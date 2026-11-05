@@ -1,0 +1,656 @@
+{
+  "version": 1,
+  "endpoints": [
+    {
+      "id": "publish-page",
+      "group": "pages",
+      "method": "POST",
+      "path": "/api/pages",
+      "title": "发布页面",
+      "summary": "Create a new published page and return its public URL.",
+      "description": "提交一个 HTML 页面，保存到数据库并返回可访问的 URL。提交人邮箱由当前认证身份自动设置，不能通过请求体覆盖。owner + slug 唯一；省略 slug 时服务端自动生成 10 位。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "html",
+          "in": "body",
+          "required": true,
+          "type": "string",
+          "description": "页面完整 HTML",
+          "example": "<h1>Hello</h1>"
+        },
+        {
+          "name": "owner",
+          "in": "body",
+          "required": true,
+          "type": "string",
+          "description": "所有者/分组（小写字母、数字、连字符）",
+          "example": "adclarity"
+        },
+        {
+          "name": "description",
+          "in": "body",
+          "required": true,
+          "type": "string",
+          "description": "页面用途说明"
+        },
+        {
+          "name": "title",
+          "in": "body",
+          "required": false,
+          "type": "string",
+          "description": "页面标题（可选）"
+        },
+        {
+          "name": "slug",
+          "in": "body",
+          "required": false,
+          "type": "string",
+          "description": "URL slug，省略时自动生成 10 位"
+        },
+        {
+          "name": "data_sources",
+          "in": "body",
+          "required": false,
+          "type": "object",
+          "description": "旧 SQL 模板，默认禁用以避免绕过页面权限。请使用页面数据文件。"
+        },
+        {
+          "name": "visibility",
+          "in": "body",
+          "required": false,
+          "type": "private | restricted | org",
+          "description": "页面访问级别；新建时未传分享配置则使用账号默认值。"
+        },
+        {
+          "name": "share_with",
+          "in": "body",
+          "required": false,
+          "type": "object",
+          "description": "{users: [FeedMob emails], groups: [group slugs]}，仅授予查看权限。"
+        },
+        {
+          "name": "listed",
+          "in": "body",
+          "required": false,
+          "type": "boolean",
+          "description": "org 页面是否出现在目录、搜索、普通列表及统计中。"
+        }
+      ],
+      "requestExample": "{\n  \"html\": \"<h1>AdClarity 周报</h1><p>本周 Top 5 ...</p>\",\n  \"owner\": \"adclarity\",\n  \"description\": \"AdClarity 每周广告数据汇总\",\n  \"title\": \"AdClarity 周报 W23\"\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"page published\",\n  \"data\": {\n    \"id\": \"183cbc20-0935-4ea4-ad67-74313bf89512\",\n    \"owner\": \"adclarity\",\n    \"slug\": \"e6viyb12di\",\n    \"url\": \"http://127.0.0.1:8000/p/adclarity/e6viyb12di\",\n    \"created_at\": \"2026-06-04T16:43:36+08:00\",\n    \"visibility\": \"org\",\n    \"share_with\": {\n      \"users\": [],\n      \"groups\": []\n    },\n    \"listed\": true\n  }\n}",
+      "curlExample": "curl -X POST http://127.0.0.1:8000/api/pages?token=$TOKEN \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"html\": \"<h1>Hello</h1>\",\n    \"owner\": \"adclarity\",\n    \"description\": \"test\"\n  }'"
+    },
+    {
+      "id": "list-pages",
+      "group": "pages",
+      "method": "GET",
+      "path": "/api/pages",
+      "title": "列出页面",
+      "summary": "List and search published pages, paginated.",
+      "description": "列表、搜索、分页和归属筛选仅统计有权访问的页面。未列出的 org 页面仅在所有者 scope=mine 中返回。identity_filters 和 legacy_submitters 同样按权限过滤。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page",
+          "in": "query",
+          "required": false,
+          "type": "int",
+          "description": "页码（默认 1）",
+          "example": "1"
+        },
+        {
+          "name": "page_size",
+          "in": "query",
+          "required": false,
+          "type": "int",
+          "description": "每页条数（1-100，默认 20）",
+          "example": "20"
+        },
+        {
+          "name": "q",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "搜索关键字"
+        },
+        {
+          "name": "scope",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "all / mine（默认 all；unassigned 仅保留旧接口兼容）",
+          "example": "mine"
+        },
+        {
+          "name": "user_email",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "按绑定归属邮箱筛选",
+          "example": "alice@feedmob.com"
+        },
+        {
+          "name": "user_id",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "按绑定 Google user id 筛选"
+        }
+      ],
+      "responseExample": "{\n  \"code\": 0,\n  \"data\": {\n    \"items\": [ { \"id\": \"...\", \"owner\": \"...\", \"slug\": \"...\", \"title\": \"...\", ... } ],\n    \"pagination\": { \"page\": 1, \"page_size\": 20, \"total\": 5, \"total_pages\": 1, \"has_next\": false, \"has_prev\": false }\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/pages?page=1&page_size=20&scope=mine&q=adclarity&token=$TOKEN\""
+    },
+    {
+      "id": "page-stats",
+      "group": "pages",
+      "method": "GET",
+      "path": "/api/pages/stats",
+      "title": "页面统计",
+      "summary": "Aggregate stats: totals and top owners/submitters.",
+      "description": "仅统计当前用户可发现的页面；隐藏无权限及未列出的 org 页面。管理员读取写入审计。",
+      "auth": "required",
+      "responseExample": "{\n  \"code\": 0,\n  \"data\": {\n    \"total_pages\": 5,\n    \"total_owners\": 3,\n    \"total_submitters\": 4,\n    \"latest_created_at\": \"2026-06-04T16:58:28+08:00\",\n    \"top_owners\": [{ \"owner\": \"adclarity\", \"count\": 2 }],\n    \"top_submitters\": [{ \"submitter\": \"alice@feedmob.com\", \"count\": 2 }]\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/pages/stats?token=$TOKEN\""
+    },
+    {
+      "id": "get-page",
+      "group": "pages",
+      "method": "GET",
+      "path": "/api/pages/{owner}/{slug}",
+      "title": "页面详情",
+      "summary": "Get full metadata for a specific page by owner + slug.",
+      "description": "返回单页面的完整元数据。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "owner",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "所有者",
+          "example": "adclarity"
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 slug",
+          "example": "e6viyb12di"
+        }
+      ],
+      "responseExample": "{\n  \"code\": 0,\n  \"data\": {\n    \"id\": \"183cbc20-...\",\n    \"owner\": \"adclarity\",\n    \"slug\": \"e6viyb12di\",\n    \"url\": \"http://127.0.0.1:8000/p/adclarity/e6viyb12di\",\n    \"title\": \"AdClarity 周报 W23\",\n    \"submitter\": \"alice@feedmob.com\",\n    \"description\": \"...\",\n    \"data_sources\": null,\n    \"created_at\": \"...\",\n    \"updated_at\": \"...\"\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/pages/adclarity/e6viyb12di?token=$TOKEN\""
+    },
+    {
+      "id": "update-page",
+      "group": "pages",
+      "method": "PUT",
+      "path": "/api/pages/{page_id}",
+      "title": "更新页面",
+      "summary": "Update an existing page's html/title/description/data_sources.",
+      "description": "按 page_id 更新页面字段。鉴权要求：调用方匹配页面绑定的 user_id/user_email，或为 admin。submitter 只作为历史兼容字段参与兜底匹配。至少传一个字段。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 UUID",
+          "example": "183cbc20-0935-4ea4-ad67-74313bf89512"
+        },
+        {
+          "name": "html",
+          "in": "body",
+          "required": false,
+          "type": "string",
+          "description": "新的 HTML"
+        },
+        {
+          "name": "title",
+          "in": "body",
+          "required": false,
+          "type": "string",
+          "description": "新标题"
+        },
+        {
+          "name": "description",
+          "in": "body",
+          "required": false,
+          "type": "string",
+          "description": "新描述"
+        },
+        {
+          "name": "data_sources",
+          "in": "body",
+          "required": false,
+          "type": "object",
+          "description": "旧 SQL 模板，默认禁用以避免绕过页面权限。请使用页面数据文件。"
+        },
+        {
+          "name": "visibility",
+          "in": "body",
+          "required": false,
+          "type": "private | restricted | org",
+          "description": "页面访问级别；新建时未传分享配置则使用账号默认值。"
+        },
+        {
+          "name": "share_with",
+          "in": "body",
+          "required": false,
+          "type": "object",
+          "description": "{users: [FeedMob emails], groups: [group slugs]}，仅授予查看权限。"
+        },
+        {
+          "name": "listed",
+          "in": "body",
+          "required": false,
+          "type": "boolean",
+          "description": "org 页面是否出现在目录、搜索、普通列表及统计中。"
+        }
+      ],
+      "requestExample": "{\n  \"title\": \"AdClarity 周报 W24\",\n  \"description\": \"更新后的描述\"\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"page updated\",\n  \"data\": { \"id\": \"...\", \"title\": \"AdClarity 周报 W24\", \"updated_at\": \"...\" }\n}",
+      "curlExample": "curl -X PUT \"http://127.0.0.1:8000/api/pages/183cbc20-...?token=$TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{ \"title\": \"AdClarity 周报 W24\" }'"
+    },
+    {
+      "id": "delete-page",
+      "group": "pages",
+      "method": "DELETE",
+      "path": "/api/pages/{page_id}",
+      "title": "删除页面",
+      "summary": "Permanently delete a published page.",
+      "description": "按 page_id 删除。鉴权要求同更新：绑定用户或 admin。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 UUID"
+        }
+      ],
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"page deleted\",\n  \"data\": { \"id\": \"183cbc20-...\" }\n}",
+      "curlExample": "curl -X DELETE \"http://127.0.0.1:8000/api/pages/183cbc20-...?token=$TOKEN\""
+    },
+    {
+      "id": "render-page",
+      "group": "pages",
+      "method": "GET",
+      "path": "/p/{owner}/{slug}",
+      "title": "访问已发布页面",
+      "summary": "Render the raw HTML of a published page (browser-facing).",
+      "description": "依据当前用户权限渲染页面；private 仅所有者及管理员，restricted 加上被授权用户与群组成员，org 为 FeedMob 员工。无权限返回 404。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "owner",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "所有者"
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 slug"
+        }
+      ],
+      "responseExample": "<!doctype html>\n<html><body>...页面内容...</body></html>",
+      "curlExample": "curl \"http://127.0.0.1:8000/p/adclarity/e6viyb12di?token=$TOKEN\"\n\ncurl \"http://127.0.0.1:8000/p/adclarity/e6viyb12di\" \\\n  -H \"Authorization: Bearer $USER_API_KEY\""
+    },
+    {
+      "id": "upload-asset",
+      "group": "assets",
+      "method": "POST",
+      "path": "/api/assets/upload",
+      "title": "上传图片到 R2",
+      "summary": "Upload an image file to Cloudflare R2 and return its public URL.",
+      "description": "支持 PNG/JPG/GIF/SVG/WebP/ICO/BMP，最大 50 MB。返回 full_url（绝对地址）和 url（相对路径）",
+      "auth": "required",
+      "params": [
+        {
+          "name": "file",
+          "in": "body",
+          "required": true,
+          "type": "file",
+          "description": "图片文件 (multipart/form-data)"
+        }
+      ],
+      "responseExample": "{\n  \"url\": \"/uploads/<user-dir>/<uuid>.png\",\n  \"full_url\": \"https://pub-xxx.r2.dev/uploads/<user-dir>/<uuid>.png\",\n  \"filename\": \"logo.png\",\n  \"size\": 12345\n}",
+      "curlExample": "curl -X POST \"http://127.0.0.1:8000/api/assets/upload?token=$TOKEN\" \\\n  -F \"file=@/path/to/image.png\""
+    },
+    {
+      "id": "upload-dataset",
+      "group": "datasets",
+      "method": "POST",
+      "path": "/api/pages/{page_id}/datasets",
+      "title": "上传数据文件",
+      "summary": "Attach a CSV/JSON data file to a page.",
+      "description": "multipart/form-data 上传 .csv / .tsv / .json / .ndjson，单文件最大 20 MB、20 万行。同一个 name 再次上传会覆盖旧文件（dashboard 刷新数据不用改 HTML）。鉴权与编辑页面一致：页面归属人或管理员。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 UUID"
+        },
+        {
+          "name": "file",
+          "in": "body",
+          "required": true,
+          "type": "file",
+          "description": "数据文件 (multipart/form-data)"
+        },
+        {
+          "name": "name",
+          "in": "body",
+          "required": false,
+          "type": "string",
+          "description": "页面内引用名，默认取文件名"
+        },
+        {
+          "name": "format",
+          "in": "body",
+          "required": false,
+          "type": "string",
+          "description": "csv | tsv | json | ndjson，默认按扩展名推断"
+        }
+      ],
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"dataset saved\",\n  \"data\": {\n    \"id\": \"0f0c...\",\n    \"name\": \"spend\",\n    \"format\": \"csv\",\n    \"row_count\": 1240,\n    \"columns\": [\"campaign\", \"country\", \"spend\", \"installs\"],\n    \"size_bytes\": 82311,\n    \"data_url\": \"https://www.html.living/p/adclarity/e6viyb12di/data/spend\"\n  }\n}",
+      "curlExample": "curl -X POST \"http://127.0.0.1:8000/api/pages/$PAGE_ID/datasets?token=$TOKEN\" \\\n  -F \"file=@/path/to/spend.csv\" \\\n  -F \"name=spend\""
+    },
+    {
+      "id": "list-datasets",
+      "group": "datasets",
+      "method": "GET",
+      "path": "/api/pages/{page_id}/datasets",
+      "title": "数据文件列表",
+      "summary": "List the data files attached to a page.",
+      "description": "返回数据文件清单、页面数据端点和该页面的 data token。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 UUID"
+        }
+      ],
+      "responseExample": "{\n  \"code\": 0,\n  \"data\": {\n    \"items\": [{ \"name\": \"spend\", \"row_count\": 1240, \"columns\": [\"campaign\", \"country\"] }],\n    \"data_endpoint\": \"https://www.html.living/p/adclarity/e6viyb12di/data\",\n    \"data_token\": \"pTn...\",\n    \"usage\": \"const rows = await PageData.load('spend')\"\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/pages/$PAGE_ID/datasets?token=$TOKEN\""
+    },
+    {
+      "id": "delete-dataset",
+      "group": "datasets",
+      "method": "DELETE",
+      "path": "/api/pages/{page_id}/datasets/{dataset_id}",
+      "title": "删除数据文件",
+      "summary": "Delete one data file from a page.",
+      "description": "删除数据库记录和 R2 对象。鉴权与编辑页面一致。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 UUID"
+        },
+        {
+          "name": "dataset_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "数据文件 UUID"
+        }
+      ],
+      "responseExample": "{ \"code\": 0, \"msg\": \"dataset deleted\", \"data\": { \"id\": \"0f0c...\" } }",
+      "curlExample": "curl -X DELETE \"http://127.0.0.1:8000/api/pages/$PAGE_ID/datasets/$DATASET_ID?token=$TOKEN\""
+    },
+    {
+      "id": "read-dataset",
+      "group": "datasets",
+      "method": "GET",
+      "path": "/p/{owner}/{slug}/data/{name}",
+      "title": "读取/过滤数据",
+      "summary": "Read a page dataset with server-side filtering, sorting, and paging.",
+      "description": "接受当前授权会话/API Key 或页面注入的已签名查看者凭证 k；每次请求重新检查权限。分享变更撤销旧凭证，群组移除即时生效。旧原始 data token 仅兼容 org 页面。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "owner",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 owner"
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 slug"
+        },
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "数据文件引用名"
+        },
+        {
+          "name": "k",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "页面 data token（页面 JS 自动带上）"
+        },
+        {
+          "name": "where",
+          "in": "query",
+          "required": false,
+          "type": "string[]",
+          "description": "过滤：column:op:value，可重复。op: eq ne gt gte lt lte contains startswith endswith in nin empty notempty",
+          "example": "country:in:US,JP"
+        },
+        {
+          "name": "select",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "只取部分列，逗号分隔"
+        },
+        {
+          "name": "sort",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "排序列（数字列按数值排序）"
+        },
+        {
+          "name": "order",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "asc | desc，默认 asc"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "type": "integer",
+          "description": "默认 5000，最大 50000"
+        },
+        {
+          "name": "offset",
+          "in": "query",
+          "required": false,
+          "type": "integer",
+          "description": "偏移量，默认 0"
+        },
+        {
+          "name": "format",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "json（带统计）| rows（纯数组）| csv"
+        }
+      ],
+      "responseExample": "{\n  \"name\": \"spend\",\n  \"columns\": [\"campaign\", \"country\", \"spend\"],\n  \"total\": 1240,\n  \"matched\": 86,\n  \"count\": 20,\n  \"offset\": 0,\n  \"limit\": 20,\n  \"rows\": [{ \"campaign\": \"brand-search\", \"country\": \"US\", \"spend\": \"1200.50\" }]\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/p/adclarity/e6viyb12di/data/spend?token=$TOKEN\" \\\n  --get --data-urlencode \"where=country:eq:US\" --data-urlencode \"sort=spend\" \\\n  --data-urlencode \"order=desc\" --data-urlencode \"limit=20\""
+    },
+    {
+      "id": "auth-me",
+      "group": "auth",
+      "method": "GET",
+      "path": "/auth/me",
+      "title": "当前用户",
+      "summary": "Get the current authenticated user (Google session).",
+      "description": "需要已通过 Google 登录。",
+      "auth": "none",
+      "responseExample": "{ \"user\": { \"sub\": \"...\", \"email\": \"...\", \"name\": \"...\", \"hd\": \"feedmob.com\" } }",
+      "curlExample": "curl \"http://127.0.0.1:8000/auth/me\" -b \"session=<cookie>\""
+    },
+    {
+      "id": "health",
+      "group": "system",
+      "method": "GET",
+      "path": "/health",
+      "title": "健康检查",
+      "summary": "Health check endpoint (public).",
+      "description": "无需鉴权，用于探活。",
+      "auth": "none",
+      "responseExample": "{ \"status\": \"ok\" }",
+      "curlExample": "curl \"http://127.0.0.1:8000/health\""
+    },
+    {
+      "id": "get-page-sharing",
+      "group": "sharing",
+      "method": "GET",
+      "path": "/api/pages/{page_id}/sharing",
+      "title": "读取分享设置",
+      "summary": "仅页面所有者或管理员；返回 visibility、share_with 和 listed。",
+      "description": "仅页面所有者或管理员；返回 visibility、share_with 和 listed。",
+      "auth": "required",
+      "params": [],
+      "requestExample": "{}",
+      "responseExample": "{}",
+      "curlExample": ""
+    },
+    {
+      "id": "set-page-sharing",
+      "group": "sharing",
+      "method": "PUT",
+      "path": "/api/pages/{page_id}/sharing",
+      "title": "修改分享设置",
+      "summary": "仅页面所有者或管理员；未传字段保持当前值。分享变化记录审计并轮换数据凭证。",
+      "description": "仅页面所有者或管理员；未传字段保持当前值。分享变化记录审计并轮换数据凭证。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "visibility",
+          "in": "body",
+          "required": false,
+          "type": "private | restricted | org",
+          "description": "页面访问级别；新建时未传分享配置则使用账号默认值。"
+        },
+        {
+          "name": "share_with",
+          "in": "body",
+          "required": false,
+          "type": "object",
+          "description": "{users: [FeedMob emails], groups: [group slugs]}，仅授予查看权限。"
+        },
+        {
+          "name": "listed",
+          "in": "body",
+          "required": false,
+          "type": "boolean",
+          "description": "org 页面是否出现在目录、搜索、普通列表及统计中。"
+        }
+      ],
+      "requestExample": "{}",
+      "responseExample": "{}",
+      "curlExample": ""
+    },
+    {
+      "id": "list-sharing-groups",
+      "group": "sharing",
+      "method": "GET",
+      "path": "/api/groups",
+      "title": "列出分享群组",
+      "summary": "列出 slug、name 和 managers；只有经理/管理员可读取成员列表。",
+      "description": "列出 slug、name 和 managers；只有经理/管理员可读取成员列表。",
+      "auth": "required",
+      "params": [],
+      "requestExample": "{}",
+      "responseExample": "{}",
+      "curlExample": ""
+    },
+    {
+      "id": "create-sharing-group",
+      "group": "sharing",
+      "method": "POST",
+      "path": "/api/groups",
+      "title": "创建分享群组",
+      "summary": "请求体 {slug,name,managers:[emails],members:[emails]}。创建人必须是经理或管理员。",
+      "description": "请求体 {slug,name,managers:[emails],members:[emails]}。创建人必须是经理或管理员。",
+      "auth": "required",
+      "params": [],
+      "requestExample": "{}",
+      "responseExample": "{}",
+      "curlExample": ""
+    },
+    {
+      "id": "set-group-members",
+      "group": "sharing",
+      "method": "PUT",
+      "path": "/api/groups/{slug}/members",
+      "title": "更新群组成员",
+      "summary": "经理或管理员可替换 {managers:[emails],members:[emails]}。至少一名经理，经理也是成员，撤权立即生效。",
+      "description": "经理或管理员可替换 {managers:[emails],members:[emails]}。至少一名经理，经理也是成员，撤权立即生效。",
+      "auth": "required",
+      "params": [],
+      "requestExample": "{}",
+      "responseExample": "{}",
+      "curlExample": ""
+    },
+    {
+      "id": "get-sharing-defaults",
+      "group": "sharing",
+      "method": "GET",
+      "path": "/api/me/sharing-defaults",
+      "title": "读取账号分享默认值",
+      "summary": "返回 {default_visibility,default_grants:{users,groups}}；初始默认 org。",
+      "description": "返回 {default_visibility,default_grants:{users,groups}}；初始默认 org。",
+      "auth": "required",
+      "params": [],
+      "requestExample": "{}",
+      "responseExample": "{}",
+      "curlExample": ""
+    },
+    {
+      "id": "set-sharing-defaults",
+      "group": "sharing",
+      "method": "PUT",
+      "path": "/api/me/sharing-defaults",
+      "title": "设置账号分享默认值",
+      "summary": "保存 {default_visibility,default_grants:{users,groups}}，仅影响之后未指定分享配置的新页面。",
+      "description": "保存 {default_visibility,default_grants:{users,groups}}，仅影响之后未指定分享配置的新页面。",
+      "auth": "required",
+      "params": [],
+      "requestExample": "{}",
+      "responseExample": "{}",
+      "curlExample": ""
+    }
+  ]
+}

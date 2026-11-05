@@ -1,0 +1,26 @@
+[Unit]
+Description=Service Deployer API
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/service-deployer/backend
+Environment=STATIC_DIR=/srv/service-deployer/frontend/dist
+# 非敏感配置
+Environment=R2_BUCKET_NAME=html-screenshots
+Environment=R2_PUBLIC_URL=https://pub-2ed43ebd6e0c47978b6fd3cb46b4c1c9.r2.dev
+# 敏感凭据从单独文件加载（chmod 600，仅 root/ubuntu 可读）
+# 文件内容示例：
+#   R2_ACCOUNT_ID=<your-cloudflare-account-id>
+#   R2_ACCESS_KEY_ID=<your-r2-access-key>
+#   R2_SECRET_ACCESS_KEY=<your-r2-secret>
+EnvironmentFile=/etc/service-deployer/backend.env
+ExecStart=/srv/service-deployer/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 30001
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

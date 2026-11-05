@@ -1,0 +1,35 @@
+www.html.living {
+	handle /mcp* {
+		reverse_proxy localhost:30002
+	}
+	handle /skill* {
+		reverse_proxy localhost:30002
+	}
+	handle /.well-known/oauth-protected-resource/registry* {
+		reverse_proxy localhost:8001
+	}
+	handle /.well-known/* {
+		reverse_proxy localhost:30002
+	}
+	handle /reimbursement {
+		redir /reimbursement/ 308
+	}
+	handle_path /reimbursement/* {
+		reverse_proxy localhost:3459
+	}
+	handle /tools {
+		redir /tools/ 308
+	}
+	handle_path /tools/* {
+		reverse_proxy localhost:3458
+	}
+	handle_path /registry/mcp* {
+		reverse_proxy localhost:8001
+	}
+	handle_path /registry/* {
+		reverse_proxy localhost:8000
+	}
+	handle {
+		reverse_proxy localhost:30001
+	}
+}

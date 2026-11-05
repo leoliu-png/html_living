@@ -1,0 +1,45 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.next/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+
+# 上传内容 / 运行时数据
+uploads/
+*.db
+*.sqlite
+*.sqlite3
+# MCP 运行时令牌存储（含活跃 OAuth refresh token，严禁入库）
+mcp-node/data/
+**/refresh_tokens.json
+# 备份文件
+*.bak
+*.orig
+
+# 环境变量 / 密钥
+.env
+.env.*
+!.env.example
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+# 日志
+*.log
+logs/
