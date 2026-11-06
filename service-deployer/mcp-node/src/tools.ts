@@ -104,13 +104,95 @@ export function registerTools(server: McpServer, getUser: () => GoogleUser | nul
       { headers: publisherHeaders(getUser()), timeout: 30_000 })).data));
   server.tool("list_groups", "List html.living sharing groups.", {}, async () => result((await axios.get(
     `${PUBLISHER_URL}/api/groups`, { headers: publisherHeaders(getUser()), timeout: 30_000 })).data));
-  server.tool("get_sharing_defaults", "Read your new-page sharing defaults.", {}, async () => result((await axios.get(
-    `${PUBLISHER_URL}/api/me/sharing-defaults`, { headers: publisherHeaders(getUser()), timeout: 30_000 })).data));
+  server.tool("get_sharing_defaults",
+    "Read your new-page sharing defaults. Pass `owner` to get the effective defaults for a page published "
+    + "under that namespace (`source` is namespace, account or system).",
+    { owner: z.string().max(96).optional().describe("Owner namespace the page will be published under") },
+    async ({ owner }) => result((await axios.get(`${PUBLISHER_URL}/api/me/sharing-defaults`, {
+      params: owner ? { owner } : undefined, headers: publisherHeaders(getUser()), timeout: 30_000,
+    })).data));
   server.tool("set_sharing_defaults", "Set your new-page sharing defaults.", {
     default_visibility: z.enum(["private", "restricted", "org"]),
     default_grants: z.object({ users: z.array(z.string()), groups: z.array(z.string()) }),
   }, async (body) => result((await axios.put(`${PUBLISHER_URL}/api/me/sharing-defaults`, body,
     { headers: publisherHeaders(getUser()), timeout: 30_000 })).data));
+  server.tool("set_namespace_sharing_defaults",
+    "Set default sharing for new pages under one owner namespace (e.g. ken-team → group ken-team). "
+    + "Admins, or managers of the group whose slug equals the namespace. Overrides account defaults.", {
+    owner: z.string().min(1).max(96),
+    default_visibility: z.enum(["private", "restricted", "org"]),
+    default_grants: z.object({ users: z.array(z.string()).default([]), groups: z.array(z.string()).default([]) }),
+  }, async ({ owner, ...body }) => result((await axios.put(
+    `${PUBLISHER_URL}/api/namespaces/${encodeURIComponent(owner)}/sharing-defaults`, body,
+    { headers: publisherHeaders(getUser()), timeout: 30_000 })).data));
+  server.tool("clear_namespace_sharing_defaults", "Remove an owner namespace's sharing default.",
+    { owner: z.string().min(1).max(96) }, async ({ owner }) => result((await axios.delete(
+      `${PUBLISHER_URL}/api/namespaces/${encodeURIComponent(owner)}/sharing-defaults`,
+      { headers: publisherHeaders(getUser()), timeout: 30_000 })).data));
+  const emails = z.array(z.string().min(3).max(256));
+  const slugParam = z.string().min(1).max(96).describe("Group slug, e.g. ken-team");
+  // Unlike a bare "Request failed with status code 409", surface the backend's reason
+  // (e.g. which pages still use a group) so the agent can explain it to the user.
+  const send = async (method: "get" | "post" | "put" | "patch" | "delete", path: string, data?: unknown, params?: Record<string, unknown>) => {
+    try {
+      return result((await axios.request({
+        method, url: `${PUBLISHER_URL}${path}`, data, params,
+        headers: publisherHeaders(getUser()), timeout: 30_000,
+      })).data);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (!status) throw err;
+      const reason = typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "";
+      return { isError: true, content: [{ type: "text" as const, text: `Request failed with status code ${status}${reason ? `: ${reason}` : ""}` }] };
+    }
+  };
+  server.tool("create_group",
+    "Create a sharing group. Managers can edit it; at least one manager is required and you must be one "
+    + "(or an admin). Emails must be @feedmob.com. Slugs are first come, first served.",
+    { slug: z.string().min(1).max(96).describe("Lowercase letters, numbers and hyphens"), name: z.string().min(1).max(200),
+      managers: emails.min(1), members: emails.default([]) },
+    async (body) => send("post", "/api/groups", body));
+  server.tool("update_group", "Rename a sharing group. Group managers or admins only.",
+    { slug: slugParam, name: z.string().min(1).max(200) },
+    async ({ slug, name }) => send("put", `/api/groups/${encodeURIComponent(slug)}`, { name }));
+  server.tool("add_group_members",
+    "Add people to a group without touching anyone else. `members` join as plain members, `managers` become managers "
+    + "(an existing member is promoted). Group managers or admins only. Prefer this over set_group_members.",
+    { slug: slugParam, members: emails.default([]), managers: emails.default([]) },
+    async ({ slug, members, managers }) => send("patch", `/api/groups/${encodeURIComponent(slug)}/members`,
+      { add_members: members, add_managers: managers }));
+  server.tool("remove_group_members",
+    "Remove people from a group entirely (members and managers). A group must keep at least one manager. "
+    + "Their access through this group ends on their next request. Group managers or admins only.",
+    { slug: slugParam, emails: emails.min(1) },
+    async ({ slug, emails: remove }) => send("patch", `/api/groups/${encodeURIComponent(slug)}/members`, { remove }));
+  server.tool("set_group_members",
+    "REPLACE the whole member and manager lists of a group. Anyone not listed is removed, so list everyone you want to keep. "
+    + "Use add_group_members / remove_group_members for small changes.",
+    { slug: slugParam, managers: emails.min(1), members: emails.default([]) },
+    async ({ slug, ...body }) => send("put", `/api/groups/${encodeURIComponent(slug)}/members`, body));
+  server.tool("delete_group",
+    "Delete a sharing group. If pages or defaults still grant access to it the call is refused (409) with the counts; "
+    + "pass force=true to remove those grants as well (affected pages lose that access immediately). Managers or admins only.",
+    { slug: slugParam, force: z.boolean().default(false) },
+    async ({ slug, force }) => send("delete", `/api/groups/${encodeURIComponent(slug)}`, undefined, force ? { force: true } : undefined));
+  server.tool("list_namespace_sharing_defaults", "List the default sharing set for owner namespaces (e.g. ken-team).", {},
+    async () => send("get", "/api/namespaces/sharing-defaults"));
+  server.tool("claim_page",
+    "Claim a legacy page that has no owner so it becomes yours. The claim is audited with the previous identity.",
+    { page_id: z.string().min(1) },
+    async ({ page_id }) => send("post", `/api/pages/${encodeURIComponent(page_id)}/claim`));
+  server.tool("get_page_audit",
+    "Sharing history of one page: who changed its access and when, and which admins opened it. Owner or admin only.",
+    { page_id: z.string().min(1), limit: z.number().int().min(1).max(200).default(50) },
+    async ({ page_id, limit }) => send("get", `/api/pages/${encodeURIComponent(page_id)}/audit`, undefined, { limit }));
+  server.tool("get_sharing_audit",
+    "Admin only: sharing audit log across all pages and groups, newest first. Filter by page_id, action "
+    + "(e.g. sharing_changed, group_deleted, admin_read, page_claimed) or actor email.",
+    { page_id: z.string().optional(), action: z.string().max(40).optional(), actor: z.string().max(256).optional(),
+      limit: z.number().int().min(1).max(500).default(100) },
+    async (query) => send("get", "/api/admin/sharing-audit", undefined, query));
   server.tool(
     "publish_page",
     "Publish an HTML page. If the HTML contains images, pass them via the `images` parameter — " +
