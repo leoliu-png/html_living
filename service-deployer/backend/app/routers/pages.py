@@ -56,16 +56,17 @@ from app.services.pages import (
 from app.services.settings import get_submitter_allowlist_value
 from app.services.sharing import (
     audit_admin_read,
+    audit_claim,
     discovery_filter,
-    get_sharing,
     publish_sharing,
     require_owner,
     require_view,
     set_sharing,
     validate_grants,
     viewer_data_token,
+    visible_sharing,
 )
-from app.services.templates import DataSourceError, render_template
+from app.services.templates import DataSourceError, legacy_sql_mode, render_template
 
 router = APIRouter(tags=["pages"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -87,10 +88,12 @@ def to_page_asset_response(
     *,
     allowlist: set[str],
     db: Optional[Session] = None,
+    actor=None,
 ) -> PageAssetResponse:
+    # Grant lists (who else can see the page) are only returned to owners/admins.
     return PageAssetResponse(
         **(
-            get_sharing(db, page).model_dump()
+            visible_sharing(db, actor, page).model_dump()
             if db is not None
             else {"visibility": page.visibility, "listed": page.listed}
         ),
@@ -123,8 +126,9 @@ def to_page_detail_response(
     *,
     allowlist: set[str],
     db: Optional[Session] = None,
+    actor=None,
 ) -> PageDetailResponse:
-    data = to_page_asset_response(page, allowlist=allowlist, db=db).model_dump()
+    data = to_page_asset_response(page, allowlist=allowlist, db=db, actor=actor).model_dump()
     return PageDetailResponse(**data, html=page.html)
 
 
@@ -502,6 +506,18 @@ def attach_page_datasets(html: str, page: PageAsset, db: Session, actor) -> str:
     return inject_page_data_runtime(html, snippet)
 
 
+def reject_disabled_sql_data_sources(data_sources) -> None:
+    """Fail fast instead of saving a SQL-template page that can never render."""
+    if data_sources and legacy_sql_mode() == "disabled":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Legacy SQL data_sources are disabled on this server because they can bypass "
+                "page permissions. Upload page datasets instead."
+            ),
+        )
+
+
 def inject_copy_source_toolbar(html: str, *, source_html: str) -> str:
     markdown = convert_html_to_markdown(source_html)
     toolbar = build_copy_source_toolbar(html=source_html, markdown=markdown)
@@ -534,6 +550,7 @@ def publish_page(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="A verified FeedMob user email is required to publish pages.",
         )
+    reject_disabled_sql_data_sources(payload.data_sources)
     sharing = publish_sharing(db, actor, payload)
     validate_grants(db, sharing.share_with)
     try:
@@ -759,7 +776,7 @@ def list_pages(
     return ApiResponse(
         data=PageListResponse(
             items=[
-                to_page_asset_response(page_asset, allowlist=allowlist, db=db)
+                to_page_asset_response(page_asset, allowlist=allowlist, db=db, actor=actor)
                 for page_asset in pages
             ],
             pagination=PaginationResponse(
@@ -828,8 +845,11 @@ def get_page(
     if page is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found.")
     allowlist = parse_email_list(get_submitter_allowlist_value(db))
-    require_view(db, get_request_actor(request, db), page)
-    return ApiResponse(data=to_page_detail_response(page, allowlist=allowlist, db=db))
+    actor = get_request_actor(request, db)
+    require_view(db, actor, page)
+    return ApiResponse(
+        data=to_page_detail_response(page, allowlist=allowlist, db=db, actor=actor)
+    )
 
 
 @router.post("/api/pages/{page_id}/claim", response_model=ApiResponse[PageDetailResponse])
@@ -862,6 +882,7 @@ def claim_unassigned_page(
             detail="Page is already assigned.",
         )
 
+    audit_claim(db, actor, page)
     try:
         page = claim_page(
             db,
@@ -874,7 +895,8 @@ def claim_unassigned_page(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     return ApiResponse(
-        msg="page claimed", data=to_page_detail_response(page, allowlist=allowlist, db=db)
+        msg="page claimed",
+        data=to_page_detail_response(page, allowlist=allowlist, db=db, actor=actor),
     )
 
 
@@ -925,6 +947,9 @@ def update_page(
         )
         if not content_fields and not sharing_fields:
             raise NoFieldsToUpdateError("At least one field must be provided.")
+        reject_disabled_sql_data_sources(payload.data_sources)
+        if content_fields and claim_identity:
+            audit_claim(db, actor, page)
         if content_fields:
             page = update_html_page(
                 db,
@@ -946,7 +971,8 @@ def update_page(
     except NoFieldsToUpdateError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return ApiResponse(
-        msg="page updated", data=to_page_detail_response(page, allowlist=allowlist, db=db)
+        msg="page updated",
+        data=to_page_detail_response(page, allowlist=allowlist, db=db, actor=actor),
     )
 
 

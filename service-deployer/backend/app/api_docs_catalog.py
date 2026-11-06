@@ -5,7 +5,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-
 _CATALOG_PATH = Path(__file__).resolve().parent / "data" / "api_docs.json"
 
 

@@ -4,6 +4,7 @@ from app.models.dataset import PageDataset
 from app.models.page import PageAsset
 from app.models.sharing import (
     GroupMember,
+    NamespaceSharingDefaults,
     PageGrant,
     SharingAuditLog,
     SharingGroup,
@@ -16,6 +17,7 @@ __all__ = [
     "PageAsset",
     "PageDataset",
     "GroupMember",
+    "NamespaceSharingDefaults",
     "PageGrant",
     "SharingAuditLog",
     "SharingGroup",

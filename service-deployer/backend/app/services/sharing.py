@@ -1,5 +1,7 @@
 """One SQL access predicate for page reads, discovery, counts and data credentials."""
 
+import hashlib
+import hmac
 import secrets
 
 from fastapi import HTTPException
@@ -11,6 +13,7 @@ from app.config import settings
 from app.models import PageAsset
 from app.models.sharing import (
     GroupMember,
+    NamespaceSharingDefaults,
     PageGrant,
     SharingAuditLog,
     SharingGroup,
@@ -92,12 +95,35 @@ def require_view(db, actor, page):
     audit_admin_read(db, actor, page.id)
 
 
+def is_page_owner(actor, page):
+    """Python twin of `owner_filter` for objects already loaded in memory."""
+    if actor is None:
+        return False
+    email = (page.user_email or "").lower()
+    return bool(
+        (email and email == actor.email.lower())
+        or (actor.user_id and page.user_id and actor.user_id == page.user_id)
+    )
+
+
+def can_manage_sharing(actor, page):
+    return bool(actor and (actor.is_admin or is_page_owner(actor, page)))
+
+
 def require_owner(db, actor, page):
     if not actor or not (
         actor.is_admin
         or db.scalar(select(PageAsset.id).where(PageAsset.id == page.id, owner_filter(actor)))
     ):
         raise HTTPException(404, "Page not found or not owned by you.")
+
+
+def visible_sharing(db, actor, page):
+    """Sharing state as shown to `actor`: grant lists only go to owners and admins."""
+    state = get_sharing(db, page)
+    if can_manage_sharing(actor, page):
+        return state
+    return SharingState(visibility=state.visibility, listed=state.listed)
 
 
 def get_sharing(db, page):
@@ -164,17 +190,76 @@ def set_sharing(db, actor, page, update, *, initial=False):
     return effective
 
 
-def defaults_for(db, actor):
+def effective_defaults(db, actor, owner=None):
+    """Return `(defaults, source)` for a new page in the `owner` namespace.
+
+    Precedence: namespace default (e.g. everything under `ken-team` goes to the
+    `ken-team` group) > the account's own default > the system default `org`.
+    """
+    if owner:
+        row = db.get(NamespaceSharingDefaults, owner)
+        if row is not None:
+            return (
+                SharingUpdate(
+                    visibility=row.default_visibility,
+                    share_with=ShareWith(**(row.default_grants or {})),
+                    listed=True,
+                ),
+                "namespace",
+            )
     row = db.get(UserSharingDefaults, actor.email.lower())
-    if row is None:
-        return SharingUpdate(visibility="org", share_with=ShareWith(), listed=True)
-    return SharingUpdate(
-        visibility=row.default_visibility, share_with=ShareWith(**row.default_grants), listed=True
+    if row is not None:
+        return (
+            SharingUpdate(
+                visibility=row.default_visibility,
+                share_with=ShareWith(**(row.default_grants or {})),
+                listed=True,
+            ),
+            "account",
+        )
+    return SharingUpdate(visibility="org", share_with=ShareWith(), listed=True), "system"
+
+
+def defaults_for(db, actor, owner=None):
+    return effective_defaults(db, actor, owner)[0]
+
+
+def can_manage_namespace(db, actor, owner):
+    """Admins, or managers of the sharing group whose slug equals the namespace."""
+    if actor is None:
+        return False
+    if actor.is_admin:
+        return True
+    return bool(
+        db.scalar(
+            select(GroupMember.user_email).where(
+                GroupMember.group_id == owner,
+                GroupMember.user_email == actor.email.lower(),
+                GroupMember.role == "manager",
+            )
+        )
+    )
+
+
+def page_identity(page):
+    return {"submitter": page.submitter, "user_email": page.user_email, "user_id": page.user_id}
+
+
+def audit_claim(db, actor, page):
+    """Record a legacy-page claim before it is applied, so admins can restore it."""
+    audit(
+        db,
+        actor,
+        page.id,
+        "page_claimed",
+        page_identity(page),
+        {"submitter": actor.email, "user_email": actor.email, "user_id": actor.user_id},
     )
 
 
 def publish_sharing(db, actor, payload):
-    defaults = defaults_for(db, actor)
+    owner = (getattr(payload, "owner", None) or "").strip().lower() or None
+    defaults = defaults_for(db, actor, owner)
     # Account defaults only apply when no sharing fields were supplied.
     if all(getattr(payload, name) is None for name in ("visibility", "share_with", "listed")):
         return defaults
@@ -186,7 +271,15 @@ def publish_sharing(db, actor, payload):
 
 
 def _serializer():
-    return URLSafeTimedSerializer(settings.session_secret, salt="page-data-viewer-v1")
+    return URLSafeTimedSerializer(settings.session_secret, salt="page-data-viewer-v2")
+
+
+def _revision_digest(revision):
+    # Signed payloads are readable base64, so never embed the raw page data token:
+    # that raw value still unlocks org page data anonymously as a legacy `k`.
+    return hmac.new(
+        settings.session_secret.encode(), f"page-data-revision:{revision}".encode(), hashlib.sha256
+    ).hexdigest()
 
 
 def viewer_data_token(db, actor, page):
@@ -196,7 +289,7 @@ def viewer_data_token(db, actor, page):
     return _serializer().dumps(
         {
             "page": page.id,
-            "revision": revision,
+            "revision": _revision_digest(revision),
             "email": actor.email,
             "sub": actor.user_id,
             "admin_token": actor.source == "admin_token",
@@ -209,7 +302,9 @@ def data_token_actor(db, token, page):
         return None
     try:
         value = _serializer().loads(token, max_age=3600)
-        if value["page"] != page.id or value["revision"] != page.data_token:
+        if value["page"] != page.id or not page.data_token:
+            return None
+        if not hmac.compare_digest(str(value["revision"]), _revision_digest(page.data_token)):
             return None
         email = value["email"]
         admins = {email.strip().lower() for email in settings.admin_emails.split(",")}

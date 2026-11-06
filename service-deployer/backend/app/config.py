@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     # Legacy SQL templates execute with the application's database privileges.
     # Disabled by default because they can bypass page-level access controls.
     allow_legacy_sql_data_sources: bool = False
+    # Safe way to keep legacy SQL templates working: a connection URL for a
+    # dedicated low-privilege login role that can only read the `legacy_sql`
+    # schema (org + listed pages). See docs/page-sharing.md for the role setup.
+    legacy_sql_database_url: str = ""
+    legacy_sql_statement_timeout_ms: int = 5000
 
     # Google OAuth
     google_client_id: str = ""

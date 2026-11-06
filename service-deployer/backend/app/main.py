@@ -199,7 +199,7 @@ def create_app() -> FastAPI:
         from sqlalchemy import text as sa_text
 
         from app.database import engine as db_engine
-        from app.services.sharing_migration import migrate_page_sharing
+        from app.services.sharing_migration import create_legacy_sql_views, migrate_page_sharing
 
         with db_engine.connect() as conn:
             migrate_page_sharing(conn)
@@ -290,6 +290,8 @@ def create_app() -> FastAPI:
                     ")"
                 )
             )
+            # After every page_assets column above exists.
+            create_legacy_sql_views(conn)
             conn.commit()
 
     @app.get("/")

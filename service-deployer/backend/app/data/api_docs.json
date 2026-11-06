@@ -53,7 +53,7 @@
           "in": "body",
           "required": false,
           "type": "object",
-          "description": "旧 SQL 模板，默认禁用以避免绕过页面权限。请使用页面数据文件。"
+          "description": "旧 SQL 模板。服务端未启用旧 SQL（默认）时传入非空值返回 422；请改用页面数据文件。"
         },
         {
           "name": "visibility",
@@ -88,7 +88,7 @@
       "path": "/api/pages",
       "title": "列出页面",
       "summary": "List and search published pages, paginated.",
-      "description": "列表、搜索、分页和归属筛选仅统计有权访问的页面。未列出的 org 页面仅在所有者 scope=mine 中返回。identity_filters 和 legacy_submitters 同样按权限过滤。",
+      "description": "列表、搜索、分页和归属筛选仅统计有权访问的页面。未列出的 org 页面仅在所有者 scope=mine 中返回。identity_filters 和 legacy_submitters 同样按权限过滤。 每条记录的 share_with 授权名单仅对页面所有者和管理员返回。",
       "auth": "required",
       "params": [
         {
@@ -160,7 +160,7 @@
       "path": "/api/pages/{owner}/{slug}",
       "title": "页面详情",
       "summary": "Get full metadata for a specific page by owner + slug.",
-      "description": "返回单页面的完整元数据。",
+      "description": "返回单页面的完整元数据。 返回 visibility、share_with、listed；share_with 授权名单仅对页面所有者和管理员返回，其他有权查看的人看到空名单。",
       "auth": "required",
       "params": [
         {
@@ -227,7 +227,7 @@
           "in": "body",
           "required": false,
           "type": "object",
-          "description": "旧 SQL 模板，默认禁用以避免绕过页面权限。请使用页面数据文件。"
+          "description": "旧 SQL 模板。服务端未启用旧 SQL（默认）时传入非空值返回 422；请改用页面数据文件。"
         },
         {
           "name": "visibility",
@@ -541,10 +541,18 @@
       "summary": "仅页面所有者或管理员；返回 visibility、share_with 和 listed。",
       "description": "仅页面所有者或管理员；返回 visibility、share_with 和 listed。",
       "auth": "required",
-      "params": [],
-      "requestExample": "{}",
-      "responseExample": "{}",
-      "curlExample": ""
+      "params": [
+        {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 UUID"
+        }
+      ],
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"visibility\": \"restricted\",\n    \"share_with\": { \"users\": [\"bob@feedmob.com\"], \"groups\": [\"ken-team\"] },\n    \"listed\": true\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/pages/<page_id>/sharing\" -H \"Authorization: Bearer $TOKEN\""
     },
     {
       "id": "set-page-sharing",
@@ -557,18 +565,25 @@
       "auth": "required",
       "params": [
         {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 UUID"
+        },
+        {
           "name": "visibility",
           "in": "body",
           "required": false,
           "type": "private | restricted | org",
-          "description": "页面访问级别；新建时未传分享配置则使用账号默认值。"
+          "description": "页面访问级别；未传时保持当前值。"
         },
         {
           "name": "share_with",
           "in": "body",
           "required": false,
           "type": "object",
-          "description": "{users: [FeedMob emails], groups: [group slugs]}，仅授予查看权限。"
+          "description": "{users: [FeedMob emails], groups: [group slugs]}，整体替换授权名单，仅授予查看权限。"
         },
         {
           "name": "listed",
@@ -578,9 +593,9 @@
           "description": "org 页面是否出现在目录、搜索、普通列表及统计中。"
         }
       ],
-      "requestExample": "{}",
-      "responseExample": "{}",
-      "curlExample": ""
+      "requestExample": "{\n  \"visibility\": \"restricted\",\n  \"share_with\": { \"users\": [\"bob@feedmob.com\"], \"groups\": [\"ken-team\"] }\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"visibility\": \"restricted\",\n    \"share_with\": { \"users\": [\"bob@feedmob.com\"], \"groups\": [\"ken-team\"] },\n    \"listed\": true\n  }\n}",
+      "curlExample": "curl -X PUT \"http://127.0.0.1:8000/api/pages/<page_id>/sharing\" \\\n  -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"visibility\": \"restricted\", \"share_with\": { \"users\": [\"bob@feedmob.com\"], \"groups\": [\"ken-team\"] }}'"
     },
     {
       "id": "list-sharing-groups",
@@ -592,9 +607,9 @@
       "description": "列出 slug、name 和 managers；只有经理/管理员可读取成员列表。",
       "auth": "required",
       "params": [],
-      "requestExample": "{}",
-      "responseExample": "{}",
-      "curlExample": ""
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": { \"items\": [ { \"slug\": \"ken-team\", \"name\": \"Ken Team\", \"managers\": [\"ken@feedmob.com\"], \"members\": [], \"can_manage\": false } ] }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/groups\" -H \"Authorization: Bearer $TOKEN\""
     },
     {
       "id": "create-sharing-group",
@@ -603,12 +618,41 @@
       "path": "/api/groups",
       "title": "创建分享群组",
       "summary": "请求体 {slug,name,managers:[emails],members:[emails]}。创建人必须是经理或管理员。",
-      "description": "请求体 {slug,name,managers:[emails],members:[emails]}。创建人必须是经理或管理员。",
+      "description": "请求体 {slug,name,managers:[emails],members:[emails]}。创建人必须是经理或管理员。 slug 先到先得；管理员可以通过更新成员接口重新指定经理。",
       "auth": "required",
-      "params": [],
-      "requestExample": "{}",
-      "responseExample": "{}",
-      "curlExample": ""
+      "params": [
+        {
+          "name": "slug",
+          "in": "body",
+          "required": true,
+          "type": "string",
+          "description": "群组 slug（小写字母、数字、连字符），唯一"
+        },
+        {
+          "name": "name",
+          "in": "body",
+          "required": true,
+          "type": "string",
+          "description": "显示名称"
+        },
+        {
+          "name": "managers",
+          "in": "body",
+          "required": true,
+          "type": "string[]",
+          "description": "经理邮箱，至少一个；非管理员创建时必须包含自己"
+        },
+        {
+          "name": "members",
+          "in": "body",
+          "required": false,
+          "type": "string[]",
+          "description": "成员邮箱"
+        }
+      ],
+      "requestExample": "{\n  \"slug\": \"ken-team\",\n  \"name\": \"Ken Team\",\n  \"managers\": [\"ken@feedmob.com\"],\n  \"members\": [\"amy@feedmob.com\"]\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"slug\": \"ken-team\",\n    \"name\": \"Ken Team\",\n    \"managers\": [\"ken@feedmob.com\"],\n    \"members\": [\"amy@feedmob.com\", \"ken@feedmob.com\"],\n    \"can_manage\": true\n  }\n}",
+      "curlExample": "curl -X POST \"http://127.0.0.1:8000/api/groups\" \\\n  -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"slug\": \"ken-team\", \"name\": \"Ken Team\", \"managers\": [\"ken@feedmob.com\"], \"members\": [\"amy@feedmob.com\"]}'"
     },
     {
       "id": "set-group-members",
@@ -619,10 +663,205 @@
       "summary": "经理或管理员可替换 {managers:[emails],members:[emails]}。至少一名经理，经理也是成员，撤权立即生效。",
       "description": "经理或管理员可替换 {managers:[emails],members:[emails]}。至少一名经理，经理也是成员，撤权立即生效。",
       "auth": "required",
-      "params": [],
-      "requestExample": "{}",
-      "responseExample": "{}",
-      "curlExample": ""
+      "params": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "群组 slug"
+        },
+        {
+          "name": "managers",
+          "in": "body",
+          "required": true,
+          "type": "string[]",
+          "description": "经理邮箱，至少一个"
+        },
+        {
+          "name": "members",
+          "in": "body",
+          "required": false,
+          "type": "string[]",
+          "description": "成员邮箱"
+        }
+      ],
+      "requestExample": "{\n  \"managers\": [\"ken@feedmob.com\"],\n  \"members\": [\"amy@feedmob.com\"]\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"slug\": \"ken-team\",\n    \"name\": \"Ken Team\",\n    \"managers\": [\"ken@feedmob.com\"],\n    \"members\": [\"amy@feedmob.com\", \"ken@feedmob.com\"],\n    \"can_manage\": true\n  }\n}",
+      "curlExample": "curl -X PUT \"http://127.0.0.1:8000/api/groups/ken-team/members\" \\\n  -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"managers\": [\"ken@feedmob.com\"], \"members\": [\"amy@feedmob.com\"]}'"
+    },
+    {
+      "id": "patch-group-members",
+      "group": "sharing",
+      "method": "PATCH",
+      "path": "/api/groups/{slug}/members",
+      "title": "增减群组成员（推荐）",
+      "summary": "经理或管理员只发要增减的人，不用重传整个名单，不会覆盖别人同时做的修改。先处理 remove，再处理新增；群组至少保留一名经理。邮箱必须是 @feedmob.com。",
+      "description": "经理或管理员只发要增减的人，不用重传整个名单，不会覆盖别人同时做的修改。先处理 remove，再处理新增；群组至少保留一名经理。邮箱必须是 @feedmob.com。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "群组 slug"
+        },
+        {
+          "name": "add_members",
+          "in": "body",
+          "required": false,
+          "type": "string[]",
+          "description": "加入为普通成员；已是经理的人保持经理"
+        },
+        {
+          "name": "add_managers",
+          "in": "body",
+          "required": false,
+          "type": "string[]",
+          "description": "加入为经理；已有成员会被提升"
+        },
+        {
+          "name": "remove",
+          "in": "body",
+          "required": false,
+          "type": "string[]",
+          "description": "整体移出群组（成员和经理都适用）。降级 = remove + add_members"
+        }
+      ],
+      "requestExample": "{\n  \"add_members\": [\"leo_liu@feedmob.com\"]\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"slug\": \"ken-team\",\n    \"name\": \"Ken Team\",\n    \"managers\": [\"ken@feedmob.com\"],\n    \"members\": [\"amy@feedmob.com\", \"ken@feedmob.com\", \"leo_liu@feedmob.com\"],\n    \"can_manage\": true\n  }\n}",
+      "curlExample": "curl -X PATCH \"http://127.0.0.1:8000/api/groups/ken-team/members\" \\\n  -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"add_members\": [\"leo_liu@feedmob.com\"]}'"
+    },
+    {
+      "id": "rename-sharing-group",
+      "group": "sharing",
+      "method": "PUT",
+      "path": "/api/groups/{slug}",
+      "title": "重命名群组",
+      "summary": "经理或管理员可修改群组显示名称，slug 不变。",
+      "description": "经理或管理员可修改群组显示名称，slug 不变。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "群组 slug"
+        },
+        {
+          "name": "name",
+          "in": "body",
+          "required": true,
+          "type": "string",
+          "description": "新名称，1-200 字符"
+        }
+      ],
+      "requestExample": "{\n  \"name\": \"Ken Platform Team\"\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"slug\": \"ken-team\",\n    \"name\": \"Ken Team\",\n    \"managers\": [\"ken@feedmob.com\"],\n    \"members\": [\"amy@feedmob.com\", \"ken@feedmob.com\", \"leo_liu@feedmob.com\"],\n    \"can_manage\": true\n  }\n}",
+      "curlExample": "curl -X PUT \"http://127.0.0.1:8000/api/groups/ken-team\" \\\n  -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"name\": \"Ken Platform Team\"}'"
+    },
+    {
+      "id": "delete-sharing-group",
+      "group": "sharing",
+      "method": "DELETE",
+      "path": "/api/groups/{slug}",
+      "title": "删除群组",
+      "summary": "经理或管理员可删除。若仍有页面授权或默认值引用该群组，默认返回 409 并给出数量；加 force=true 才会连同这些授权一起清除（相关页面立即失去这部分访问权限，页面数据凭证同时轮换）。这样 slug 被他人重新注册时，不会继承旧授权。",
+      "description": "经理或管理员可删除。若仍有页面授权或默认值引用该群组，默认返回 409 并给出数量；加 force=true 才会连同这些授权一起清除（相关页面立即失去这部分访问权限，页面数据凭证同时轮换）。这样 slug 被他人重新注册时，不会继承旧授权。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "群组 slug"
+        },
+        {
+          "name": "force",
+          "in": "query",
+          "required": false,
+          "type": "boolean",
+          "description": "true 时清除仍引用该群组的页面授权和默认值，默认 false"
+        }
+      ],
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"group deleted\",\n  \"data\": { \"slug\": \"ken-team\", \"page_grants\": 2, \"account_defaults\": 0, \"namespace_defaults\": 1 }\n}",
+      "curlExample": "curl -X DELETE \"http://127.0.0.1:8000/api/groups/ken-team?force=true\" -H \"Authorization: Bearer $TOKEN\""
+    },
+    {
+      "id": "get-page-audit",
+      "group": "sharing",
+      "method": "GET",
+      "path": "/api/pages/{page_id}/audit",
+      "title": "页面分享历史",
+      "summary": "页面 owner 或管理员可查看：谁在什么时候改了分享设置，以及哪些管理员打开过这个页面。按时间倒序。",
+      "description": "页面 owner 或管理员可查看：谁在什么时候改了分享设置，以及哪些管理员打开过这个页面。按时间倒序。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page_id",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "页面 ID"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "type": "integer",
+          "description": "返回条数，1-200，默认 50"
+        }
+      ],
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": { \"items\": [ { \"at\": \"2026-11-06T07:30:00+00:00\", \"actor\": \"alice@feedmob.com\", \"action\": \"sharing_changed\", \"page_id\": \"...\", \"page\": \"alice/for-bob\", \"before\": { \"visibility\": \"org\" }, \"after\": { \"visibility\": \"private\" } } ] }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/pages/<page_id>/audit?limit=20\" -H \"Authorization: Bearer $TOKEN\""
+    },
+    {
+      "id": "list-sharing-audit",
+      "group": "sharing",
+      "method": "GET",
+      "path": "/api/admin/sharing-audit",
+      "title": "全局分享审计日志（管理员）",
+      "summary": "仅管理员。查看所有页面和群组的分享变更、管理员读取、认领、群组增删等记录，可按页面、动作、操作人过滤。",
+      "description": "仅管理员。查看所有页面和群组的分享变更、管理员读取、认领、群组增删等记录，可按页面、动作、操作人过滤。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "page_id",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "只看某个页面"
+        },
+        {
+          "name": "action",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "如 sharing_changed、group_deleted、group_members_changed、admin_read、page_claimed"
+        },
+        {
+          "name": "actor",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "操作人邮箱"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "type": "integer",
+          "description": "返回条数，1-500，默认 100"
+        }
+      ],
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": { \"items\": [ { \"at\": \"...\", \"actor\": \"admin@feedmob.com\", \"action\": \"admin_read\", \"page\": \"alice/trip-receipts\" } ] }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/admin/sharing-audit?action=group_deleted\" -H \"Authorization: Bearer $TOKEN\""
     },
     {
       "id": "get-sharing-defaults",
@@ -630,13 +869,21 @@
       "method": "GET",
       "path": "/api/me/sharing-defaults",
       "title": "读取账号分享默认值",
-      "summary": "返回 {default_visibility,default_grants:{users,groups}}；初始默认 org。",
-      "description": "返回 {default_visibility,default_grants:{users,groups}}；初始默认 org。",
+      "summary": "返回 {default_visibility,default_grants,source,owner}。不带 owner 时返回账号默认值（source=account，未设置时为 system/org）；带 owner 时返回发布到该命名空间的新页面实际会用的默认值，命名空间默认值优先于账号默认值（source=namespace）。",
+      "description": "返回 {default_visibility,default_grants,source,owner}。不带 owner 时返回账号默认值（source=account，未设置时为 system/org）；带 owner 时返回发布到该命名空间的新页面实际会用的默认值，命名空间默认值优先于账号默认值（source=namespace）。",
       "auth": "required",
-      "params": [],
-      "requestExample": "{}",
-      "responseExample": "{}",
-      "curlExample": ""
+      "params": [
+        {
+          "name": "owner",
+          "in": "query",
+          "required": false,
+          "type": "string",
+          "description": "可选，页面将发布到的 owner 命名空间"
+        }
+      ],
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"default_visibility\": \"restricted\",\n    \"default_grants\": { \"users\": [], \"groups\": [\"ken-team\"] },\n    \"source\": \"namespace\",\n    \"owner\": \"ken-team\"\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/me/sharing-defaults?owner=ken-team\" -H \"Authorization: Bearer $TOKEN\""
     },
     {
       "id": "set-sharing-defaults",
@@ -647,10 +894,133 @@
       "summary": "保存 {default_visibility,default_grants:{users,groups}}，仅影响之后未指定分享配置的新页面。",
       "description": "保存 {default_visibility,default_grants:{users,groups}}，仅影响之后未指定分享配置的新页面。",
       "auth": "required",
+      "params": [
+        {
+          "name": "default_visibility",
+          "in": "body",
+          "required": true,
+          "type": "private | restricted | org",
+          "description": "新页面默认访问级别"
+        },
+        {
+          "name": "default_grants",
+          "in": "body",
+          "required": false,
+          "type": "object",
+          "description": "{users, groups} 默认授权名单"
+        }
+      ],
+      "requestExample": "{\n  \"default_visibility\": \"private\",\n  \"default_grants\": { \"users\": [], \"groups\": [] }\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": { \"default_visibility\": \"private\", \"default_grants\": { \"users\": [], \"groups\": [] } }\n}",
+      "curlExample": "curl -X PUT \"http://127.0.0.1:8000/api/me/sharing-defaults\" \\\n  -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"default_visibility\": \"private\", \"default_grants\": {\"users\": [], \"groups\": []}}'"
+    },
+    {
+      "id": "list-namespace-defaults",
+      "group": "sharing",
+      "method": "GET",
+      "path": "/api/namespaces/sharing-defaults",
+      "title": "列出命名空间默认权限",
+      "summary": "列出所有已设置默认权限的 owner 命名空间。",
+      "description": "任何登录用户可读；can_manage 表示当前用户能否修改。",
+      "auth": "required",
       "params": [],
-      "requestExample": "{}",
-      "responseExample": "{}",
-      "curlExample": ""
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": { \"items\": [ { \"owner\": \"ken-team\", \"default_visibility\": \"restricted\", \"default_grants\": { \"users\": [], \"groups\": [\"ken-team\"] }, \"updated_by\": \"ken@feedmob.com\", \"can_manage\": false } ] }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/namespaces/sharing-defaults\" -H \"Authorization: Bearer $TOKEN\""
+    },
+    {
+      "id": "get-namespace-defaults",
+      "group": "sharing",
+      "method": "GET",
+      "path": "/api/namespaces/{owner}/sharing-defaults",
+      "title": "读取命名空间默认权限",
+      "summary": "读取某个 owner 命名空间的默认权限，未设置时返回 404。",
+      "description": "任何登录用户可读。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "owner",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "owner 命名空间"
+        }
+      ],
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"owner\": \"ken-team\",\n    \"default_visibility\": \"restricted\",\n    \"default_grants\": { \"users\": [], \"groups\": [\"ken-team\"] },\n    \"updated_by\": \"ken@feedmob.com\",\n    \"can_manage\": true\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/namespaces/ken-team/sharing-defaults\" -H \"Authorization: Bearer $TOKEN\""
+    },
+    {
+      "id": "set-namespace-defaults",
+      "group": "sharing",
+      "method": "PUT",
+      "path": "/api/namespaces/{owner}/sharing-defaults",
+      "title": "设置命名空间默认权限",
+      "summary": "发布到该命名空间且未指定分享配置的新页面使用此默认值，优先于发布者的账号默认值。",
+      "description": "仅管理员或与命名空间同名群组的经理可设置（例如 ken-team 群组的经理可设置 ken-team 命名空间）。变更写入审计日志，只影响之后新发布的页面。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "owner",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "owner 命名空间"
+        },
+        {
+          "name": "default_visibility",
+          "in": "body",
+          "required": true,
+          "type": "private | restricted | org",
+          "description": "默认访问级别"
+        },
+        {
+          "name": "default_grants",
+          "in": "body",
+          "required": false,
+          "type": "object",
+          "description": "{users, groups} 默认授权名单"
+        }
+      ],
+      "requestExample": "{\n  \"default_visibility\": \"restricted\",\n  \"default_grants\": { \"groups\": [\"ken-team\"] }\n}",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"owner\": \"ken-team\",\n    \"default_visibility\": \"restricted\",\n    \"default_grants\": { \"users\": [], \"groups\": [\"ken-team\"] },\n    \"updated_by\": \"ken@feedmob.com\",\n    \"can_manage\": true\n  }\n}",
+      "curlExample": "curl -X PUT \"http://127.0.0.1:8000/api/namespaces/ken-team/sharing-defaults\" \\\n  -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"default_visibility\": \"restricted\", \"default_grants\": {\"groups\": [\"ken-team\"]}}'"
+    },
+    {
+      "id": "delete-namespace-defaults",
+      "group": "sharing",
+      "method": "DELETE",
+      "path": "/api/namespaces/{owner}/sharing-defaults",
+      "title": "移除命名空间默认权限",
+      "summary": "移除后该命名空间的新页面回到发布者的账号默认值。",
+      "description": "权限与设置相同，写入审计日志。",
+      "auth": "required",
+      "params": [
+        {
+          "name": "owner",
+          "in": "path",
+          "required": true,
+          "type": "string",
+          "description": "owner 命名空间"
+        }
+      ],
+      "requestExample": "",
+      "responseExample": "{ \"code\": 0, \"msg\": \"namespace default removed\", \"data\": { \"owner\": \"ken-team\" } }",
+      "curlExample": "curl -X DELETE \"http://127.0.0.1:8000/api/namespaces/ken-team/sharing-defaults\" -H \"Authorization: Bearer $TOKEN\""
+    },
+    {
+      "id": "legacy-sql-pages",
+      "group": "admin",
+      "method": "GET",
+      "path": "/api/admin/legacy-sql-pages",
+      "title": "旧 SQL 模板页面清单",
+      "summary": "仅管理员：列出仍使用旧 SQL data_sources 的页面以及当前执行模式。",
+      "description": "mode=disabled 时这些页面渲染失败，需要迁移为页面数据文件或配置 legacy_sql_database_url 沙箱角色；mode=sandbox 时以只读低权限角色执行，只能读取 org 且已列出的页面；mode=unsafe 时以应用数据库权限执行，可绕过页面权限。",
+      "auth": "required",
+      "params": [],
+      "requestExample": "",
+      "responseExample": "{\n  \"code\": 0,\n  \"msg\": \"ok\",\n  \"data\": {\n    \"mode\": \"disabled\",\n    \"total\": 1,\n    \"items\": [ { \"id\": \"…\", \"owner\": \"legacy\", \"slug\": \"sql\", \"title\": \"Old report\", \"url\": \"…/p/legacy/sql\", \"visibility\": \"org\", \"user_email\": null, \"data_source_names\": [\"rows\"], \"updated_at\": \"2026-05-01T00:00:00+00:00\" } ]\n  }\n}",
+      "curlExample": "curl \"http://127.0.0.1:8000/api/admin/legacy-sql-pages\" -H \"Authorization: Bearer $TOKEN\""
     }
   ]
 }

@@ -61,7 +61,10 @@ def _serve_spa() -> Response:
     return JSONResponse(
         {
             "message": "Frontend not built. Run: cd frontend && npm run build",
-            "hint": "Use /api-docs.json or curl /api-docs without Accept: text/html for machine-readable docs.",
+            "hint": (
+                "Use /api-docs.json or curl /api-docs without Accept: text/html "
+                "for machine-readable docs."
+            ),
             "endpoints": load_api_docs_catalog()["endpoints"],
             "version": load_api_docs_catalog()["version"],
         }
@@ -98,7 +101,9 @@ def api_docs(
     if fmt in {"json", "application/json"} or _wants_json(accept, fmt):
         return JSONResponse(content=load_api_docs_catalog())
     if fmt in {"md", "markdown", "text"}:
-        return PlainTextResponse(content=api_docs_markdown(), media_type="text/markdown; charset=utf-8")
+        return PlainTextResponse(
+            content=api_docs_markdown(), media_type="text/markdown; charset=utf-8"
+        )
     if _wants_html(accept):
         return _serve_spa()
 

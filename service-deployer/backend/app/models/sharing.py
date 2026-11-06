@@ -43,6 +43,19 @@ class UserSharingDefaults(Base):
     default_grants: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class NamespaceSharingDefaults(Base):
+    """Default sharing for new pages published under one `owner` URL namespace."""
+
+    __tablename__ = "namespace_sharing_defaults"
+    owner: Mapped[str] = mapped_column(String(96), primary_key=True)
+    default_visibility: Mapped[str] = mapped_column(String(16), default="org")
+    default_grants: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_by: Mapped[str] = mapped_column(String(256))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class SharingAuditLog(Base):
     __tablename__ = "sharing_audit_log"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
