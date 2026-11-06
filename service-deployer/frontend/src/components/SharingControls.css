@@ -154,7 +154,8 @@
   gap: 20px;
   max-width: 840px;
 }
-.sharing-loading-fields {
+.sharing-loading-fields,
+.sharing-fields fieldset.sharing-loading-fields {
   border: 0;
   padding: 0;
   margin: 0;
@@ -175,4 +176,41 @@
   padding: 12px 0;
   border-bottom: 1px solid #edf0f4;
   font-size: 13px;
+}
+
+.sharing-access h3 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+.sharing-access ul,
+ul.sharing-access {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.sharing-access li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.sharing-access small {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.sharing-settings button.danger-btn {
+  color: #d32f2f;
+  border-color: #d32f2f;
+  background: transparent;
+}
+.sharing-settings button.danger-btn:hover:not(:disabled) {
+  color: #fff;
+  background: #d32f2f;
 }

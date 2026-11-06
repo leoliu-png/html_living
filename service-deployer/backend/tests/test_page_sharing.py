@@ -315,20 +315,33 @@ def test_legacy_pages_keep_org_access_but_private_legacy_pages_cannot_be_claimed
 
 
 def test_legacy_sql_template_cannot_read_private_page_content(monkeypatch):
-    client, _, _ = make_client(monkeypatch)
+    client, factory, _ = make_client(monkeypatch)
     publish(client, "private")
-    other = client.post(
-        "/api/pages",
-        headers=user("bob@feedmob.com"),
-        json={
-            "owner": "bob",
-            "slug": "query",
-            "html": "{{ .leak.html }}",
-            "description": "query",
-            "data_sources": {"leak": "SELECT html FROM page_assets"},
-        },
-    )
-    assert other.status_code == 201
+    body = {
+        "owner": "bob",
+        "slug": "query",
+        "html": "{{ .leak.html }}",
+        "description": "query",
+        "data_sources": {"leak": "SELECT html FROM page_assets"},
+    }
+    # New SQL-template pages are rejected up front while legacy SQL is disabled.
+    rejected = client.post("/api/pages", headers=user("bob@feedmob.com"), json=body)
+    assert rejected.status_code == 422
+    assert "data_sources" in rejected.text
+    # Pages saved before the rollout still exist; rendering them must not leak.
+    with factory() as db:
+        db.add(
+            PageAsset(
+                owner="bob",
+                slug="query",
+                html=body["html"],
+                description="query",
+                submitter="bob@feedmob.com",
+                user_email="bob@feedmob.com",
+                data_sources=body["data_sources"],
+            )
+        )
+        db.commit()
     response = client.get("/p/bob/query", headers=user("bob@feedmob.com"))
     assert response.status_code == 500
     assert "Secret report" not in response.text

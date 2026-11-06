@@ -593,7 +593,12 @@ def test_page_detail_returns_html_for_editing(db) -> None:
         db=db,
     )
 
-    detail = get_page(owner=created.data.owner, slug=created.data.slug, request=FakeRequest(session={"user": {"sub": "u-8", "email": "gina@feedmob.com"}}), db=db)
+    detail = get_page(
+        owner=created.data.owner,
+        slug=created.data.slug,
+        request=FakeRequest(session={"user": {"sub": "u-8", "email": "gina@feedmob.com"}}),
+        db=db,
+    )
 
     assert detail.data.html == html
     assert detail.data.submitter == "gina@feedmob.com"

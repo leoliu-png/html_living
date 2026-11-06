@@ -13,7 +13,7 @@ type Param = {
 
 type Endpoint = {
   id: string;
-  group: "pages" | "auth" | "system" | "assets" | "datasets";
+  group: "pages" | "auth" | "system" | "assets" | "datasets" | "sharing" | "admin";
   method: HttpMethod;
   path: string;
   title: string;
@@ -393,7 +393,7 @@ const COPY = {
     copied: "已复制",
     tryIt: "试用",
     tryItRunning: "调用中…",
-    groups: { pages: "页面", auth: "认证", system: "系统", assets: "资源", datasets: "数据文件" } as Record<string, string>,
+    groups: { pages: "页面", auth: "认证", system: "系统", assets: "资源", datasets: "数据文件", sharing: "分享与权限", admin: "管理" } as Record<string, string>,
     paramLocation: { path: "路径", query: "查询", body: "Body", header: "Header" } as Record<string, string>,
     noParams: "无参数",
     required: "必填",
@@ -417,7 +417,7 @@ const COPY = {
     copied: "Copied",
     tryIt: "Try it",
     tryItRunning: "Calling…",
-    groups: { pages: "Pages", auth: "Auth", system: "System", assets: "Assets", datasets: "Datasets" } as Record<string, string>,
+    groups: { pages: "Pages", auth: "Auth", system: "System", assets: "Assets", datasets: "Datasets", sharing: "Sharing", admin: "Admin" } as Record<string, string>,
     paramLocation: { path: "Path", query: "Query", body: "Body", header: "Header" } as Record<string, string>,
     noParams: "No parameters",
     required: "required",

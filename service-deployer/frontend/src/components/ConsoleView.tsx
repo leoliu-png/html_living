@@ -255,8 +255,20 @@ type FormMode =
   | { kind: "create" }
   | { kind: "edit"; page: PageRecord };
 
+type DefaultsSource = "namespace" | "account" | "system";
+
+type EffectiveDefaults = {
+  default_visibility: Sharing["visibility"];
+  default_grants: Sharing["share_with"];
+  source: DefaultsSource;
+  owner?: string | null;
+};
+
 type FormState = {
   sharing?: Sharing;
+  /** True once the user edits sharing; namespace defaults then stop overwriting it. */
+  sharingTouched?: boolean;
+  sharingSource?: DefaultsSource;
   owner: string;
   slug: string;
   title: string;
@@ -472,11 +484,37 @@ export function ConsoleView({ language, api, initialSection, currentUser, isAdmi
   const openCreate = async () => {
     setFormError(null);
     try {
-      const defaults = await api.fetchApi<{ default_visibility: Sharing["visibility"]; default_grants: Sharing["share_with"] }>("/api/me/sharing-defaults");
-      setFormState({ ...EMPTY_FORM, sharing: { visibility: defaults.default_visibility, share_with: defaults.default_grants, listed: true } });
+      const defaults = await api.fetchApi<EffectiveDefaults>("/api/me/sharing-defaults");
+      setFormState({
+        ...EMPTY_FORM,
+        sharing: { visibility: defaults.default_visibility, share_with: defaults.default_grants, listed: true },
+        sharingSource: defaults.source,
+      });
       setForm({ kind: "create" });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Request failed");
+    }
+  };
+
+  // Namespace defaults (e.g. ken-team → group ken-team) depend on the owner field.
+  const applyOwnerDefaults = async (owner: string) => {
+    const namespace = owner.trim().toLowerCase();
+    if (!namespace) return;
+    try {
+      const defaults = await api.fetchApi<EffectiveDefaults>(
+        `/api/me/sharing-defaults?owner=${encodeURIComponent(namespace)}`,
+      );
+      setFormState((current) =>
+        current.sharingTouched || current.owner.trim().toLowerCase() !== namespace
+          ? current
+          : {
+              ...current,
+              sharing: { visibility: defaults.default_visibility, share_with: defaults.default_grants, listed: true },
+              sharingSource: defaults.source,
+            },
+      );
+    } catch {
+      // Invalid owner names are reported on submit; keep the current choice.
     }
   };
 
@@ -942,6 +980,7 @@ export function ConsoleView({ language, api, initialSection, currentUser, isAdmi
           mode={form.kind}
           state={formState}
           onChange={setFormState}
+          onOwnerBlur={applyOwnerDefaults}
           error={formError}
           submitting={formSubmitting}
           onCancel={closeForm}
@@ -958,13 +997,14 @@ type ModalProps = {
   mode: "create" | "edit";
   state: FormState;
   onChange: (next: FormState) => void;
+  onOwnerBlur: (owner: string) => void;
   error: string | null;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: () => void;
 };
 
-function PageFormModal({ api, language, mode, state, onChange, error, submitting, onCancel, onSubmit }: ModalProps) {
+function PageFormModal({ api, language, mode, state, onChange, onOwnerBlur, error, submitting, onCancel, onSubmit }: ModalProps) {
   const t = copy[language] as typeof copy.zh;
 
   const update = (patch: Partial<FormState>) => onChange({ ...state, ...patch });
@@ -988,6 +1028,7 @@ function PageFormModal({ api, language, mode, state, onChange, error, submitting
               type="text"
               value={state.owner}
               onChange={(e) => update({ owner: e.target.value })}
+              onBlur={(e) => mode === "create" && onOwnerBlur(e.target.value)}
               disabled={mode === "edit"}
               required
             />
@@ -1036,7 +1077,23 @@ function PageFormModal({ api, language, mode, state, onChange, error, submitting
               required
             />
           </div>
-          {mode === "create" && state.sharing && <SharingFields api={api} language={language} value={state.sharing} onChange={sharing => update({ sharing })} />}
+          {mode === "create" && state.sharing && (
+            <>
+              {state.sharingSource === "namespace" && !state.sharingTouched && (
+                <p className="hint">
+                  {language === "zh"
+                    ? `已套用命名空间 ${state.owner.trim().toLowerCase()} 的默认权限`
+                    : `Using the default for namespace ${state.owner.trim().toLowerCase()}`}
+                </p>
+              )}
+              <SharingFields
+                api={api}
+                language={language}
+                value={state.sharing}
+                onChange={(sharing) => update({ sharing, sharingTouched: true })}
+              />
+            </>
+          )}
         </div>
 
         <footer className="page-form-footer">

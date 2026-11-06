@@ -9,6 +9,13 @@ export type Sharing = {
   share_with: { users: string[]; groups: string[] };
   listed: boolean;
 };
+type NamespaceDefault = {
+  owner: string;
+  default_visibility: Sharing["visibility"];
+  default_grants: Sharing["share_with"];
+  updated_by?: string | null;
+  can_manage: boolean;
+};
 type Group = {
   slug: string;
   name: string;
@@ -264,6 +271,64 @@ export function SharingFields({
   );
 }
 
+/** "Who has access" list, reflecting the unsaved choice in the dialog. */
+function AccessSummary({
+  value,
+  owner,
+  language,
+}: {
+  value: Sharing;
+  owner?: string | null;
+  language: Language;
+}) {
+  const zh = language === "zh";
+  const rows: { key: string; who: string; role: string }[] = [
+    {
+      key: "owner",
+      who: owner || (zh ? "未认领页面" : "Unassigned page"),
+      role: zh ? "所有者" : "Owner",
+    },
+  ];
+  if (value.visibility === "org") {
+    rows.push({
+      key: "org",
+      who: zh ? "所有 FeedMob 登录账号" : "Everyone signed in at FeedMob",
+      role: value.listed
+        ? zh ? "查看 · 出现在目录" : "Viewer · listed"
+        : zh ? "查看 · 仅凭链接" : "Viewer · link only",
+    });
+  } else if (value.visibility === "restricted") {
+    for (const user of value.share_with.users) {
+      rows.push({ key: `u:${user}`, who: user, role: zh ? "查看" : "Viewer" });
+    }
+    for (const group of value.share_with.groups) {
+      rows.push({
+        key: `g:${group}`,
+        who: `${zh ? "群组" : "Group"} ${group}`,
+        role: zh ? "查看（全部成员）" : "Viewer (all members)",
+      });
+    }
+  }
+  rows.push({
+    key: "admins",
+    who: zh ? "管理员" : "Administrators",
+    role: zh ? "可访问 · 记录审计" : "Access is audited",
+  });
+  return (
+    <section className="sharing-access" aria-label={zh ? "谁有权限" : "Who has access"}>
+      <h3>{zh ? "谁有权限" : "Who has access"}</h3>
+      <ul>
+        {rows.map((row) => (
+          <li key={row.key}>
+            <span>{row.who}</span>
+            <small>{row.role}</small>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function ShareDialog({
   page,
   api,
@@ -348,6 +413,13 @@ export function ShareDialog({
             language={language}
           />
         )}
+        {!loading && (
+          <AccessSummary
+            value={value}
+            owner={page.user_email}
+            language={language}
+          />
+        )}
         <footer className="sharing-actions">
           <button
             type="button"
@@ -402,8 +474,19 @@ export function SharingSettings({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  const [namespaces, setNamespaces] = useState<NamespaceDefault[]>([]);
+  const [nsOwner, setNsOwner] = useState("");
+  const [nsValue, setNsValue] = useState<Sharing>(empty);
   const reloadGroups = async () =>
     setGroups((await api.fetchApi<{ items: Group[] }>("/api/groups")).items);
+  const reloadNamespaces = async () =>
+    setNamespaces(
+      (
+        await api.fetchApi<{ items: NamespaceDefault[] }>(
+          "/api/namespaces/sharing-defaults",
+        )
+      ).items,
+    );
   useEffect(() => {
     let active = true;
     Promise.all([
@@ -412,9 +495,13 @@ export function SharingSettings({
         default_grants: Sharing["share_with"];
       }>("/api/me/sharing-defaults"),
       api.fetchApi<{ items: Group[] }>("/api/groups"),
+      api.fetchApi<{ items: NamespaceDefault[] }>(
+        "/api/namespaces/sharing-defaults",
+      ),
     ])
-      .then(([d, g]) => {
+      .then(([d, g, n]) => {
         if (active) {
+          setNamespaces(n.items);
           setValue({
             ...empty,
             visibility: d.default_visibility,
@@ -453,12 +540,56 @@ export function SharingSettings({
       setBusy(false);
     }
   }
+  async function saveNamespace() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const owner = nsOwner.trim().toLowerCase();
+      await api.sendJson(
+        `/api/namespaces/${encodeURIComponent(owner)}/sharing-defaults`,
+        {
+          default_visibility: nsValue.visibility,
+          default_grants: nsValue.share_with,
+        },
+        "PUT",
+      );
+      await reloadNamespaces();
+      setNsOwner("");
+      setNsValue(empty);
+      setMessage(zh ? "命名空间默认值已保存" : "Namespace default saved");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removeNamespace(owner: string) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.fetchApi(
+        `/api/namespaces/${encodeURIComponent(owner)}/sharing-defaults`,
+        "DELETE",
+      );
+      await reloadNamespaces();
+      setMessage(zh ? "命名空间默认值已移除" : "Namespace default removed");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function saveGroup() {
     setBusy(true);
     setError("");
     setMessage("");
     try {
       const body = { members: split(members), managers: split(managers) };
+      if (editing && name.trim() && name.trim() !== editing.name) {
+        await api.sendJson(`/api/groups/${editing.slug}`, { name: name.trim() }, "PUT");
+      }
       await api.sendJson(
         editing ? `/api/groups/${editing.slug}/members` : "/api/groups",
         editing ? body : { ...body, slug, name },
@@ -471,6 +602,40 @@ export function SharingSettings({
       setMembers("");
       setManagers(email);
       setMessage(zh ? "群组已保存" : "Group saved");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function deleteGroup(group: Group) {
+    const ask = zh
+      ? `确定删除群组 ${group.name}（${group.slug}）吗？此操作不可撤销。`
+      : `Delete group ${group.name} (${group.slug})? This cannot be undone.`;
+    if (!window.confirm(ask)) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    const path = `/api/groups/${encodeURIComponent(group.slug)}`;
+    try {
+      try {
+        await api.fetchApi(path, "DELETE");
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        if (!reason.includes("still used")) throw e;
+        const force = zh
+          ? `${reason}\n\n继续删除会同时移除这些页面和默认值里对该群组的授权，相关页面会立即失去这部分访问权限。仍要删除吗？`
+          : `${reason}\n\nDeleting anyway removes this group's access from those pages and defaults immediately. Delete anyway?`;
+        if (!window.confirm(force)) return;
+        await api.fetchApi(`${path}?force=true`, "DELETE");
+      }
+      await reloadGroups();
+      setEditing(null);
+      setSlug("");
+      setName("");
+      setMembers("");
+      setManagers(email);
+      setMessage(zh ? "群组已删除" : "Group deleted");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -515,6 +680,75 @@ export function SharingSettings({
         </button>
       </section>
       <section className="console-panel">
+        <h2>{zh ? "命名空间默认权限" : "Namespace defaults"}</h2>
+        <p>
+          {zh
+            ? "发布到某个 owner 命名空间（例如 ken-team）的新页面优先使用这里的默认值，其次才是个人默认值。只有管理员或同名群组的经理可以设置。"
+            : "New pages under an owner namespace (for example ken-team) use this default before the publisher's own. Only administrators or managers of the group with the same slug can set it."}
+        </p>
+        {namespaces.map((n) => (
+          <div key={n.owner} className="sharing-group-row">
+            <span>
+              <strong>{n.owner}</strong>{" "}
+              <VisibilityBadge visibility={n.default_visibility} language={language} />{" "}
+              {[...n.default_grants.users, ...n.default_grants.groups].join(", ")}
+            </span>
+            {n.can_manage && (
+              <span className="sharing-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNsOwner(n.owner);
+                    setNsValue({
+                      ...empty,
+                      visibility: n.default_visibility,
+                      share_with: n.default_grants,
+                    });
+                  }}
+                >
+                  {zh ? "编辑" : "Edit"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => removeNamespace(n.owner)}
+                >
+                  {zh ? "移除" : "Remove"}
+                </button>
+              </span>
+            )}
+          </div>
+        ))}
+        <div className="sharing-fields">
+          <label>
+            {zh ? "命名空间（owner）" : "Namespace (owner)"}
+            <input
+              value={nsOwner}
+              onChange={(e) => setNsOwner(e.target.value)}
+              placeholder="ken-team"
+            />
+          </label>
+          <fieldset disabled={busy} className="sharing-loading-fields">
+            <SharingFields
+              key={`ns:${groups.map((g) => g.slug).join(",")}`}
+              value={nsValue}
+              onChange={setNsValue}
+              api={api}
+              language={language}
+              showListed={false}
+            />
+          </fieldset>
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={busy || !nsOwner.trim()}
+            onClick={saveNamespace}
+          >
+            {zh ? "保存命名空间默认值" : "Save namespace default"}
+          </button>
+        </div>
+      </section>
+      <section className="console-panel">
         <h2>{zh ? "分享群组" : "Sharing groups"}</h2>
         <p>
           {zh
@@ -537,7 +771,7 @@ export function SharingSettings({
                   setManagers(g.managers.join("\n"));
                 }}
               >
-                {zh ? "编辑成员" : "Edit members"}
+                {zh ? "编辑群组" : "Edit group"}
               </button>
             )}
           </div>
@@ -546,8 +780,8 @@ export function SharingSettings({
           <h3>
             {editing
               ? zh
-                ? "编辑群组成员"
-                : "Edit group members"
+                ? "编辑群组"
+                : "Edit group"
               : zh
                 ? "创建群组"
                 : "Create group"}
@@ -561,12 +795,10 @@ export function SharingSettings({
               placeholder="ken-team"
             />
           </label>
-          {!editing && (
-            <label>
-              {zh ? "名称" : "Name"}
-              <input value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-          )}
+          <label>
+            {zh ? "名称" : "Name"}
+            <input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
           <label>
             {zh ? "成员邮箱（每行一个）" : "Members (one email per line)"}
             <textarea
@@ -597,6 +829,16 @@ export function SharingSettings({
             {editing && (
               <button
                 type="button"
+                className="danger-btn"
+                disabled={busy}
+                onClick={() => deleteGroup(editing)}
+              >
+                {zh ? "删除群组" : "Delete group"}
+              </button>
+            )}
+            {editing && (
+              <button
+                type="button"
                 onClick={() => {
                   setEditing(null);
                   setSlug("");
@@ -611,6 +853,88 @@ export function SharingSettings({
           </div>
         </div>
       </section>
+    </section>
+  );
+}
+
+type LegacySqlPage = {
+  id: string;
+  owner: string;
+  slug: string;
+  title?: string | null;
+  url: string;
+  visibility: Sharing["visibility"];
+  user_email?: string | null;
+  data_source_names: string[];
+};
+
+/** Admin-only inventory of pages that still depend on legacy SQL templates. */
+export function LegacySqlInventory({
+  api,
+  language,
+}: {
+  api: ConsoleApi;
+  language: Language;
+}) {
+  const zh = language === "zh";
+  const [data, setData] = useState<{
+    mode: "disabled" | "sandbox" | "unsafe";
+    items: LegacySqlPage[];
+  } | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    api
+      .fetchApi<{ mode: "disabled" | "sandbox" | "unsafe"; items: LegacySqlPage[] }>(
+        "/api/admin/legacy-sql-pages",
+      )
+      .then((value) => active && setData(value))
+      .catch((e) => active && setError(String(e)));
+    return () => {
+      active = false;
+    };
+  }, [api]);
+  const modeText = {
+    disabled: zh
+      ? "已禁用：这些页面会显示数据源错误，需迁移为数据文件或配置沙箱角色。"
+      : "Disabled: these pages show a data source error until migrated to datasets or a sandbox role is configured.",
+    sandbox: zh
+      ? "沙箱模式：查询以只读低权限角色执行，只能看到 org 且已列出的页面。"
+      : "Sandbox: queries run read-only as a low-privilege role that only sees listed org pages.",
+    unsafe: zh
+      ? "不安全模式：查询使用应用数据库权限，可绕过页面权限。"
+      : "Unsafe: queries use application privileges and can bypass page permissions.",
+  };
+  return (
+    <section className="console-panel keys-panel">
+      <h2>{zh ? "旧 SQL 模板页面" : "Legacy SQL template pages"}</h2>
+      {error && (
+        <p className="page-form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {data && (
+        <>
+          <p>{modeText[data.mode]}</p>
+          {data.items.length === 0 ? (
+            <p>{zh ? "没有页面使用旧 SQL 模板。" : "No page uses legacy SQL templates."}</p>
+          ) : (
+            <ul className="sharing-access">
+              {data.items.map((item) => (
+                <li key={item.id}>
+                  <span>
+                    <a href={item.url} target="_blank" rel="noreferrer">
+                      {item.owner}/{item.slug}
+                    </a>{" "}
+                    {item.title} · {item.data_source_names.join(", ")}
+                  </span>
+                  <small>{item.user_email || (zh ? "未认领" : "unassigned")}</small>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </section>
   );
 }

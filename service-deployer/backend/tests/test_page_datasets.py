@@ -295,7 +295,8 @@ def test_rendered_page_injects_page_data_runtime(monkeypatch) -> None:
     with session_factory() as db:
         token = db.scalar(select(PageAsset.data_token).where(PageAsset.id == page_id))
     from bs4 import BeautifulSoup
-    manifest = json.loads(BeautifulSoup(response.text, "html.parser").find(id="page-data-manifest").string)
+    manifest_node = BeautifulSoup(response.text, "html.parser").find(id="page-data-manifest")
+    manifest = json.loads(manifest_node.string)
     assert manifest["token"] != token
     assert client.get(f"/p/reports/weekly/data/spend?k={manifest['token']}").status_code == 200
 

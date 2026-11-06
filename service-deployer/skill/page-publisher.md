@@ -5,7 +5,7 @@ description: Publish HTML pages through the FeedMob Service Deployer REST API. C
 
 # Page Publisher
 
-Publish HTML pages to the FeedMob Service Deployer. Every page gets a stable public URL.
+Publish HTML pages to the FeedMob Service Deployer. Every page gets a stable URL. Who can open it is controlled by the page's sharing level (see [Sharing](#sharing)); viewers always sign in with a FeedMob Google account.
 
 This Skill is documentation for an AI agent. Reading this file does not authenticate the user and does not grant publishing access. Ask the user for their Service Deployer API token when you need to call protected API endpoints.
 
@@ -70,7 +70,10 @@ Body:
 | `description` | yes | Short human-readable purpose of the page |
 | `title` | no | Page title |
 | `slug` | no | URL slug. Server generates one when omitted |
-| `data_sources` | no | Object of named SQL/data source strings |
+| `visibility` | no | `private`, `restricted` or `org`. See [Sharing](#sharing) |
+| `share_with` | no | `{"users": ["name@feedmob.com"], "groups": ["group-slug"]}`, used by `restricted` |
+| `listed` | no | `org` pages only: `false` keeps the page off the registry, search and stats |
+| `data_sources` | no | Legacy SQL templates. Rejected with 422 unless the server enables them; use datasets instead |
 
 Example:
 
@@ -86,7 +89,62 @@ curl -s -X POST "{{BASE_URL}}/api/pages" \
   }'
 ```
 
-Successful response includes `data.url`. Return that URL to the user.
+Successful response includes `data.url` and the **effective** `visibility`, `share_with` and `listed`. Return the URL and tell the user who can open it.
+
+Private example:
+
+```bash
+curl -s -X POST "{{BASE_URL}}/api/pages" \
+  -H "Authorization: Bearer <user_api_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "html": "<!doctype html><html><body><h1>Trip receipts</h1></body></html>",
+    "owner": "ken",
+    "description": "Team trip expense report",
+    "visibility": "restricted",
+    "share_with": {"users": ["evan@feedmob.com"], "groups": ["ken-team"]}
+  }'
+```
+
+## Sharing
+
+| `visibility` | Who can open the URL | Shown in registry / list / search / stats |
+|---|---|---|
+| `private` | The owner (the authenticated account that published it) | Owner only |
+| `restricted` | Owner, plus the `share_with` users and members of the `share_with` groups | Only to people who can open it |
+| `org` | Anyone signed in with a FeedMob account | Yes, unless `listed` is `false` |
+
+- Administrators can open every page; those reads are audited.
+- Someone without access gets `404`, the same as a page that does not exist.
+- Removing a person or group takes effect on their next request.
+- **Changing group membership.** To add or remove a few people use `add_group_members` / `remove_group_members` (or `PATCH /api/groups/{slug}/members`); only use `set_group_members` (replace) when you really want the full list to be exactly what you send, because anyone omitted is removed. Before `delete_group --force`, tell the user which pages will lose access.
+- **Defaults.** When the publish body has no sharing fields, the server uses, in this order: the default of the `owner` namespace (for example everything under `ken-team` goes to group `ken-team`), the publisher's account default, then `org`. If you send some sharing fields, omitted `visibility` still comes from the default, but omitted `share_with` becomes empty and omitted `listed` becomes `true`.
+- **Ask before sharing widely.** If the page holds personal, financial, customer or credential data, or the user names specific readers, publish it `private` or `restricted`, not `org`.
+- **Images are not protected.** Images uploaded with `/api/assets/upload` get public URLs that anyone can open without signing in, whatever the page's sharing. Do not upload confidential images.
+
+Sharing endpoints (all require the user API token):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET / PUT | `/api/pages/{page_id}/sharing` | Read or change a page's sharing (owner or admin). Omitted fields keep their value; `share_with` replaces the whole list |
+| GET | `/api/groups` | List sharing groups (`slug`, `name`, `managers`; members only for managers) |
+| POST | `/api/groups` | Create `{slug, name, managers, members}`; the creator must be a manager |
+| PUT | `/api/groups/{slug}/members` | Replace `{managers, members}` (group manager or admin) |
+| PATCH | `/api/groups/{slug}/members` | Add or remove people without resending the list: `{add_members, add_managers, remove}` (manager or admin; a group keeps at least one manager). Prefer this over PUT |
+| PUT | `/api/groups/{slug}` | Rename `{name}` (manager or admin) |
+| DELETE | `/api/groups/{slug}` | Delete a group. Refused with `409` while pages or defaults still grant access to it; `?force=true` removes those grants too |
+| GET | `/api/pages/{page_id}/audit` | Who changed this page's sharing and which admins opened it (owner or admin) |
+| GET | `/api/admin/sharing-audit` | Admin: audit log across all pages and groups; filters `page_id`, `action`, `actor`, `limit` |
+| GET / PUT | `/api/me/sharing-defaults` | Account defaults `{default_visibility, default_grants: {users, groups}}`. `GET ?owner=<namespace>` returns what a new page there would get, with `source` |
+| GET / PUT / DELETE | `/api/namespaces/{owner}/sharing-defaults` | Namespace default (admins, or managers of the group with the same slug) |
+
+```bash
+# Make an existing page private
+curl -s -X PUT "{{BASE_URL}}/api/pages/<page_id>/sharing" \
+  -H "Authorization: Bearer <user_api_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"visibility": "private"}'
+```
 
 ## Upload an image
 
@@ -196,8 +254,11 @@ GET /p/{owner}/{slug}/data/{name}?k=<page_data_token>
     &format=json|rows|csv
 ```
 
-The token is injected into the page for you (`PageData` adds `k` automatically);
-an authenticated session or API key also works for manual curl checks.
+The token is injected into the page for you (`PageData` adds `k` automatically).
+It is bound to the viewer, expires after one hour and is rechecked against the
+page's current sharing on every request, so do not copy it into other systems;
+refreshing the page issues a new one. An authenticated session or API key also
+works for manual curl checks.
 
 ## List pages
 
@@ -219,8 +280,8 @@ Query parameters:
 
 Scopes:
 
-- `all`: all published pages visible to the console/API user.
-- `mine`: pages owned by the current API token user.
+- `all`: published pages the current user can open, excluding unlisted `org` pages.
+- `mine`: pages owned by the current API token user, including their unlisted pages.
 - `unassigned`: legacy pages without a bound user identity and whose submitter is outside the admin allowlist.
 
 ## Update a page
@@ -240,13 +301,15 @@ Body may include any of:
 | `html` | New HTML |
 | `title` | New title |
 | `description` | New description |
-| `data_sources` | New data source object |
+| `data_sources` | New data source object (legacy SQL; rejected with 422 unless the server enables it) |
+| `visibility`, `share_with`, `listed` | Change sharing in the same call (owner or admin only) |
 
 Ownership rules:
 
 - A user can update their own pages.
 - Admin can update any page.
-- Any signed-in/API-token user can update an unassigned legacy page; updating it claims it to that user.
+- People a page is shared with can view it but cannot edit, delete or re-share it.
+- Any signed-in/API-token user can update an unassigned legacy `org` page; updating it claims it to that user. Claims are recorded in the audit log, so only claim pages the user actually owns.
 
 ## Delete a page
 
@@ -257,7 +320,7 @@ DELETE /api/pages/{page_id}
 Authorization: Bearer <user_api_token>
 ```
 
-Ownership rules match update. Unassigned legacy pages can be deleted by any signed-in/API-token user.
+Ownership rules match update. Unassigned legacy `org` pages can be deleted by any signed-in/API-token user.
 
 ## Get page detail
 
@@ -268,6 +331,8 @@ GET /api/pages/{owner}/{slug}
 Authorization: Bearer <user_api_token>
 ```
 
+Includes `visibility`, `listed` and `share_with`. The `share_with` lists are only filled in for the page owner and admins.
+
 ## Page stats
 
 Endpoint:
@@ -277,16 +342,17 @@ GET /api/pages/stats
 Authorization: Bearer <user_api_token>
 ```
 
-Returns total pages, top owners, and top submitters.
+Returns total pages, top owners, and top submitters, counting only listed pages the user can open.
 
 ## Agent workflow
 
 1. If the user asks you to publish a page, ask for their Service Deployer API token unless they already provided one in the current context.
 2. Upload local image assets first with `/api/assets/upload`.
 3. Replace local image references in the HTML with returned `full_url` values.
-4. Call `POST /api/pages` with `html`, `owner`, `description`, and optional `title`/`slug`.
-5. For a data-driven dashboard, upload the CSV/JSON with `POST /api/pages/{page_id}/datasets` and read it in the HTML through `PageData` instead of inlining the rows.
-6. Return the published URL from `data.url`.
+4. Decide who should see the page. If it is meant for specific people or contains sensitive data, set `visibility` (and `share_with`); otherwise omit sharing to use the defaults.
+5. Call `POST /api/pages` with `html`, `owner`, `description`, optional `title`/`slug` and any sharing fields.
+6. For a data-driven dashboard, upload the CSV/JSON with `POST /api/pages/{page_id}/datasets` and read it in the HTML through `PageData` instead of inlining the rows.
+7. Return the published URL from `data.url` and the effective `visibility` from the response.
 
 ## Pitfalls
 
@@ -294,7 +360,9 @@ Returns total pages, top owners, and top submitters.
 - Do not claim that reading this Skill logs the user in.
 - Do not use MCP endpoints unless the user explicitly asks for MCP integration.
 - Do not use the old command `npx skills add feedmob/page-publisher`; that package/repository is not published.
-- For images, use the response `full_url` field in HTML.
+- For images, use the response `full_url` field in HTML. Image URLs are public even on private pages.
+- Do not use SQL `data_sources`; upload datasets instead.
+- Do not assume a page is company-wide: check `visibility` in the publish response and report it.
 - Do not inline large datasets into the HTML; upload them as data files and query them with `PageData`.
 - Dataset column names come from the uploaded file's header — read them from the upload response instead of guessing.
 - Keep generated HTML reasonably compact. Large embedded base64 images should be uploaded as files instead.

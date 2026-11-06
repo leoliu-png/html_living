@@ -16,16 +16,40 @@ type Props = {
   language: Language;
 };
 
+function isEndpointList(value: unknown): value is Endpoint[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (ep) => ep && typeof ep.id === "string" && typeof ep.path === "string" && typeof ep.method === "string",
+    )
+  );
+}
+
 export function ApiDocsView({ language }: Props) {
   const t = COPY[language] as typeof COPY.zh;
   const [query, setQuery] = useState("");
+  // The backend catalog (/api-docs.json) is the single source of truth; the
+  // bundled list is only a fallback when it cannot be fetched.
+  const [endpoints, setEndpoints] = useState<Endpoint[]>(ENDPOINTS);
+  useEffect(() => {
+    let active = true;
+    fetch("/api-docs.json", { headers: { Accept: "application/json" } })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((catalog) => {
+        if (active && catalog && isEndpointList(catalog.endpoints)) setEndpoints(catalog.endpoints);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
   const [activeId, setActiveId] = useState<string | null>(ENDPOINTS[0]?.id ?? null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return ENDPOINTS;
-    return ENDPOINTS.filter((ep) => {
+    if (!q) return endpoints;
+    return endpoints.filter((ep) => {
       return (
         ep.method.toLowerCase().includes(q) ||
         ep.path.toLowerCase().includes(q) ||
@@ -33,7 +57,7 @@ export function ApiDocsView({ language }: Props) {
         ep.summary.toLowerCase().includes(q)
       );
     });
-  }, [query]);
+  }, [query, endpoints]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Endpoint[]>();
@@ -64,7 +88,7 @@ export function ApiDocsView({ language }: Props) {
     }
   };
 
-  const activeEndpoint = ENDPOINTS.find((ep) => ep.id === activeId);
+  const activeEndpoint = endpoints.find((ep) => ep.id === activeId);
 
   return (
     <div className="api-docs">

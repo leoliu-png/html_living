@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, Check, Clipboard, Eye, FileStack, KeyRound, Loader2, Plus, Save, ShieldCheck, Tags, Trash2, UserCircle, UserRound, Users } from "lucide-react";
 import type { Language } from "../content";
 import { ConsoleView } from "./ConsoleView";
-import { SharingSettings } from "./SharingControls";
+import { LegacySqlInventory, SharingSettings } from "./SharingControls";
 import "./ConsoleView.css";
 
 type ApiResponse<T> = {
@@ -131,7 +131,16 @@ async function fetchApi<T>(path: string, method: "GET" | "DELETE" = "GET"): Prom
   const separator = path.includes("?") ? "&" : "?";
   const url = token ? `${path}${separator}token=${encodeURIComponent(token)}` : path;
   const response = await fetch(url, { method });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const j = await response.json();
+      if (j?.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+    } catch {
+      // keep the status text
+    }
+    throw new Error(detail);
+  }
 
   const payload = (await response.json()) as ApiResponse<T>;
   if (payload.code !== 0) throw new Error(payload.msg || "Request failed");
@@ -478,6 +487,7 @@ export function ConsoleRoot({ language }: { language: Language }) {
                   </button>
                 </div>
               </section>
+              <LegacySqlInventory api={api} language={language} />
             </section>
           ) : section === "api-keys" ? (
             <section className="keys-view">

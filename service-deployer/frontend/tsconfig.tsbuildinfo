@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/content.ts","./src/main.tsx","./src/components/ConsoleView.tsx","./src/components/PaperPlaneMotion.tsx"],"version":"5.9.3"}
+{"root":["./src/App.tsx","./src/apiDocs.ts","./src/content.ts","./src/main.tsx","./src/components/ApiDocsView.tsx","./src/components/ConsoleRoot.tsx","./src/components/ConsoleView.tsx","./src/components/PageDatasetsPanel.tsx","./src/components/PaperPlaneMotion.tsx","./src/components/SharingControls.tsx"],"version":"5.9.3"}
